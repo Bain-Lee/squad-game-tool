@@ -1,0 +1,5 @@
+/build/
+/dist/
+/SquadTools-portable.zip
+*.pdb
+*.tmp

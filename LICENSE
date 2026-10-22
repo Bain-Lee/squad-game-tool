@@ -1,0 +1,12 @@
+Squad Tools - local non-commercial prototype
+
+This project references the game parameters and calculation design of SquadCalc.
+Original project: https://github.com/sh4rkman/SquadCalc
+Original author: Maxime "sharkman" Boussard, copyright (c) 2026.
+
+This prototype is provided for non-commercial use under the conditions in the
+accompanying third_party/SquadCalc.LICENSE. That complete copyright and license
+notice must accompany copies or redistribution of this project.
+
+No license to Squad SDK map images, icons, heightmaps, or other game assets is
+granted by this notice. Those assets are not included in this prototype.

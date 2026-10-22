@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+# Keep the upstream license text unchanged, including its whitespace.
+third_party/SquadCalc.LICENSE -whitespace
