@@ -96,7 +96,7 @@ namespace SquadTools
             if (HasMarkers)
             {
                 double radius = Ballistics.Velocity * Ballistics.Velocity / Ballistics.Gravity * Scale;
-                dc.DrawEllipse(Brush("#0EAECE75"), new Pen(Brush("#5075BC92"), 1) { DashStyle = DashStyles.Dash }, Screen(Weapon), radius, radius);
+                dc.DrawEllipse(Brush("#1CAEDE75"), null, Screen(Weapon), radius, radius);
             }
             int columns = (int)Math.Ceiling(WorldSize / 300);
             int rows = (int)Math.Ceiling(WorldHeight / 300);
@@ -137,6 +137,9 @@ namespace SquadTools
             }
             if (HasMarkers)
             {
+                double radius = Ballistics.Velocity * Ballistics.Velocity / Ballistics.Gravity * Scale;
+                dc.DrawEllipse(null, new Pen(Brush("#E619251B"), 4.5), Screen(Weapon), radius, radius);
+                dc.DrawEllipse(null, new Pen(Brush("#D4F58C"), 2), Screen(Weapon), radius, radius);
                 Point a = Screen(Weapon), b = Screen(Target);
                 dc.DrawLine(new Pen(Brush("#E2D57C"), 2) { DashStyle = DashStyles.Dash }, a, b);
                 Marker(dc, a, "M", "#B8EB7E"); Marker(dc, b, "T", "#FFA88C");
@@ -155,16 +158,27 @@ namespace SquadTools
             dc.DrawRoundedRectangle(Brush("#E8101B24"), null, new Rect(15, ActualHeight - 48, scaleLength + 28, 36), 4, 4);
             dc.DrawLine(new Pen(Brush("#BECDD5"), 2), new Point(28, ActualHeight - 22), new Point(28 + scaleLength, ActualHeight - 22));
             Text(dc, (scaleLength / Scale).ToString("F0") + " m", 29, ActualHeight - 44, 10, "#BECDD5");
-            if (MapImage == null) Text(dc, "坐标网格 · 可导入本地地图图片", Math.Max(18, ActualWidth - 258), ActualHeight - 37, 12, "#8196A5");
+            if (HasMarkers)
+            {
+                dc.DrawRoundedRectangle(Brush("#D9101B24"), null, new Rect(ActualWidth - 181, ActualHeight - 41, 166, 26), 4, 4);
+                dc.DrawLine(new Pen(Brush("#D4F58C"), 2), new Point(ActualWidth - 171, ActualHeight - 28), new Point(ActualWidth - 155, ActualHeight - 28));
+                Text(dc, "绿色圈：平地理论射程", ActualWidth - 149, ActualHeight - 36, 10, "#D9E8CF");
+            }
+            if (MapImage == null) Text(dc, "坐标网格 · 可导入本地地图图片", Math.Max(18, ActualWidth - 258), ActualHeight - (HasMarkers ? 63 : 37), 12, "#8196A5");
         }
 
         private void Marker(DrawingContext dc, Point p, string label, string color)
         {
-            dc.DrawEllipse(Brush("#17232B"), new Pen(Brush(color), 2), p, 14, 14);
-            dc.DrawLine(new Pen(Brush(color), 1), new Point(p.X - 21, p.Y), new Point(p.X - 15, p.Y));
-            dc.DrawLine(new Pen(Brush(color), 1), new Point(p.X + 15, p.Y), new Point(p.X + 21, p.Y));
-            dc.DrawLine(new Pen(Brush(color), 1), new Point(p.X, p.Y - 21), new Point(p.X, p.Y - 15));
-            Text(dc, label, p.X - 5, p.Y - 9, 12, color);
+            dc.DrawEllipse(null, new Pen(Brush("#F0101B24"), 3.5), p, 5, 5);
+            dc.DrawEllipse(null, new Pen(Brush(color), 1.5), p, 5, 5);
+            dc.DrawEllipse(Brush(color), null, p, 1, 1);
+            var crosshair = new Pen(Brush(color), 1);
+            dc.DrawLine(crosshair, new Point(p.X - 7.5, p.Y), new Point(p.X - 6, p.Y));
+            dc.DrawLine(crosshair, new Point(p.X + 6, p.Y), new Point(p.X + 7.5, p.Y));
+            dc.DrawLine(crosshair, new Point(p.X, p.Y - 7.5), new Point(p.X, p.Y - 6));
+            dc.DrawLine(crosshair, new Point(p.X, p.Y + 6), new Point(p.X, p.Y + 7.5));
+            dc.DrawRoundedRectangle(Brush("#D9101B24"), null, new Rect(p.X + 7, p.Y + 2, 15, 16), 2, 2);
+            Text(dc, label, p.X + 9, p.Y + 3, 10, color);
         }
     }
 }

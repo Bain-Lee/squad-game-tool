@@ -31,6 +31,7 @@ namespace SquadTools
         private MapView map;
         private bool loading = true;
         private FiringSolution solution;
+        private Vec2? preciseWeapon, preciseTarget;
         private readonly string dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
         private string ImagePath { get { return Path.Combine(dataDirectory, "custom-map.png"); } }
 
@@ -60,7 +61,7 @@ namespace SquadTools
             mapInfo = (TextBlock)root.FindName("MapInfo"); terrainNote = (TextBlock)root.FindName("TerrainNote"); heightHint = (TextBlock)root.FindName("HeightHint");
             mapSelector = (ComboBox)root.FindName("MapSelector"); automaticHeight = (CheckBox)root.FindName("AutomaticHeight");
             map = new MapView(); ((Border)root.FindName("MapHost")).Child = map;
-            map.PointPlaced += delegate(Vec2 p, bool mortar) { string grid = GridReference.Format(p, 3); if (mortar) weaponGrid.Text = grid; else targetGrid.Text = grid; };
+            map.PointPlaced += PlacePoint;
             ((Button)root.FindName("ImportMap")).Click += delegate { ImportMap(); };
             ((Button)root.FindName("ClearMap")).Click += delegate { ClearMap(); };
             ((Button)root.FindName("ZoomIn")).Click += delegate { map.ZoomBy(1.3); };
@@ -74,16 +75,32 @@ namespace SquadTools
             mapSelector.SelectionChanged += delegate { if (!loading) ApplySelectedMap(true); };
             automaticHeight.Checked += delegate { if (!loading) { preferAutomaticHeight = true; UpdateHeightMode(); Recalculate(); } };
             automaticHeight.Unchecked += delegate { if (!loading) { preferAutomaticHeight = false; UpdateHeightMode(); Recalculate(); } };
-            foreach (var box in new[] { weaponGrid, targetGrid, weaponHeight, targetHeight, mapSize }) box.TextChanged += delegate { if (!loading) Recalculate(); };
+            weaponGrid.TextChanged += delegate { if (!loading) { preciseWeapon = null; Recalculate(); } };
+            targetGrid.TextChanged += delegate { if (!loading) { preciseTarget = null; Recalculate(); } };
+            foreach (var box in new[] { weaponHeight, targetHeight, mapSize }) box.TextChanged += delegate { if (!loading) Recalculate(); };
             foreach (MapDefinition definition in MapCatalog.Load(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "maps"))) mapChoices.Add(new MapChoice { Definition = definition });
             mapChoices.Add(new MapChoice());
             mapSelector.ItemsSource = mapChoices;
             if (!testMode) LoadSettings();
             MapChoice initial = mapChoices.Find(delegate(MapChoice choice) { return choice.Id == restoredMapId; });
+            if (initial == null) { preciseWeapon = null; preciseTarget = null; }
             mapSelector.SelectedItem = initial ?? mapChoices[0];
             ApplySelectedMap(false);
             loading = false; Recalculate();
             if (!testMode) Closing += delegate { SaveSettings(); };
+        }
+
+        private void PlacePoint(Vec2 position, bool mortar)
+        {
+            bool wasLoading = loading; loading = true;
+            try
+            {
+                string grid = GridReference.Format(position, 3);
+                if (mortar) { preciseWeapon = position; weaponGrid.Text = grid; }
+                else { preciseTarget = position; targetGrid.Text = grid; }
+            }
+            finally { loading = wasLoading; }
+            if (!loading) Recalculate();
         }
 
         private void ApplySelectedMap(bool resetPositions)
@@ -124,8 +141,12 @@ namespace SquadTools
                 }
                 automaticHeight.IsEnabled = terrain != null;
                 automaticHeight.IsChecked = terrain != null && preferAutomaticHeight;
+                double mapWidth = map.WorldSize, mapHeight = map.WorldHeight;
+                if (preciseWeapon.HasValue && !InsideMap(preciseWeapon.Value, mapWidth, mapHeight)) preciseWeapon = null;
+                if (preciseTarget.HasValue && !InsideMap(preciseTarget.Value, mapWidth, mapHeight)) preciseTarget = null;
                 if (resetPositions)
                 {
+                    preciseWeapon = null; preciseTarget = null;
                     weaponHeight.Text = "0"; targetHeight.Text = "0";
                     double x = map.WorldSize * 0.42, y = map.WorldHeight * 0.48;
                     weaponGrid.Text = GridReference.Format(new Vec2(x, y), 3);
@@ -166,6 +187,8 @@ namespace SquadTools
                 if (width < 300 || width > 7800) throw new FormatException("地图边长应为 300–7800 米。");
                 map.WorldSize = width; map.WorldHeight = selectedMap == null ? width : selectedMap.Height;
                 Vec2 mortar = GridReference.Parse(weaponGrid.Text), target = GridReference.Parse(targetGrid.Text);
+                if (preciseWeapon.HasValue) mortar = preciseWeapon.Value;
+                if (preciseTarget.HasValue) target = preciseTarget.Value;
                 if (mortar.X >= width || mortar.Y >= map.WorldHeight || target.X >= width || target.Y >= map.WorldHeight)
                     throw new FormatException("坐标超出当前地图，请检查坐标或地图边长。");
                 bool automatic = terrain != null && automaticHeight.IsChecked == true;
@@ -178,6 +201,8 @@ namespace SquadTools
                 double h1 = Number(weaponHeight.Text, "炮位地面高度："), h2 = Number(targetHeight.Text, "目标地面高度：");
                 if (Math.Abs(h1) > 10000 || Math.Abs(h2) > 10000) throw new FormatException("高度绝对值应小于等于 10000 米。");
                 map.Weapon = mortar; map.Target = target; map.HasMarkers = true;
+                weaponGrid.ToolTip = PositionHint(mortar, preciseWeapon.HasValue);
+                targetGrid.ToolTip = PositionHint(target, preciseTarget.HasValue);
                 solution = Ballistics.Solve(mortar, target, h1, h2);
                 bearing.Text = solution.BearingDegrees.ToString("F1", CultureInfo.InvariantCulture) + "°";
                 distance.Text = solution.Distance.ToString("F1") + " m";
@@ -203,8 +228,20 @@ namespace SquadTools
                 bearing.Text = "—"; elevation.Text = "—"; distance.Text = "—"; difference.Text = "—"; flight.Text = "—";
                 status.Text = ex.Message; status.Foreground = new SolidColorBrush(Color.FromRgb(255, 168, 140));
                 map.HasMarkers = false;
+                weaponGrid.ToolTip = "请输入有效网格坐标；在地图点击可精确定位。";
+                targetGrid.ToolTip = "请输入有效网格坐标；在地图点击可精确定位。";
             }
             map.InvalidateVisual();
+        }
+
+        private static bool InsideMap(Vec2 position, double width, double height)
+        {
+            return position.X >= 0 && position.X < width && position.Y >= 0 && position.Y < height;
+        }
+
+        private static string PositionHint(Vec2 position, bool precise)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0}：东 {1:F2}m，南 {2:F2}m。{3}", precise ? "实际点击位置" : "网格中心", position.X, position.Y, precise ? "框内网格为参考，计算保留实际点位。" : "按最末级小格中心计算。");
         }
 
         private double SelectedMil { get { return solution.HighUsable ? solution.HighMil : solution.LowMil; } }
@@ -260,6 +297,8 @@ namespace SquadTools
                     else if (File.Exists(ImagePath)) restoredMapId = "custom";
                     XmlNode autoNode = document.SelectSingleNode("/settings/automaticHeight");
                     preferAutomaticHeight = autoNode == null || autoNode.InnerText != "false";
+                    preciseWeapon = ReadPrecisePoint(document, "weapon", weaponGrid.Text);
+                    preciseTarget = ReadPrecisePoint(document, "target", targetGrid.Text);
                 }
             }
             catch (Exception) { status.Text = "本地设置未能读取，使用默认值。"; }
@@ -279,10 +318,34 @@ namespace SquadTools
                     string[] names = { "weapon", "target", "weaponHeight", "targetHeight", "mapSize", "mapId", "automaticHeight" };
                     string[] values = { weaponGrid.Text, targetGrid.Text, weaponHeight.Text, targetHeight.Text, customMapSize.ToString("0.##", CultureInfo.InvariantCulture), ((MapChoice)mapSelector.SelectedItem).Id, preferAutomaticHeight ? "true" : "false" };
                     for (int i = 0; i < names.Length; i++) writer.WriteElementString(names[i], values[i]);
+                    WritePrecisePoint(writer, "weapon", preciseWeapon);
+                    WritePrecisePoint(writer, "target", preciseTarget);
                     writer.WriteEndElement();
                 }
             }
             catch (Exception ex) { MessageBox.Show(this, "无法保存本地设置：" + ex.Message + "\n请将软件放到可写文件夹。", "保存设置"); }
+        }
+
+        private static void WritePrecisePoint(XmlWriter writer, string prefix, Vec2? point)
+        {
+            if (!point.HasValue) return;
+            writer.WriteElementString(prefix + "X", point.Value.X.ToString("R", CultureInfo.InvariantCulture));
+            writer.WriteElementString(prefix + "Y", point.Value.Y.ToString("R", CultureInfo.InvariantCulture));
+        }
+
+        private static Vec2? ReadPrecisePoint(XmlDocument document, string prefix, string grid)
+        {
+            XmlNode xNode = document.SelectSingleNode("/settings/" + prefix + "X"), yNode = document.SelectSingleNode("/settings/" + prefix + "Y");
+            double x, y;
+            if (xNode == null || yNode == null || !double.TryParse(xNode.InnerText, NumberStyles.Float, CultureInfo.InvariantCulture, out x) || !double.TryParse(yNode.InnerText, NumberStyles.Float, CultureInfo.InvariantCulture, out y)) return null;
+            var point = new Vec2(x, y);
+            try
+            {
+                if (GridReference.Format(point, 3) != GridReference.Format(GridReference.Parse(grid), 3)) return null;
+                return point;
+            }
+            catch (ArgumentException) { return null; }
+            catch (FormatException) { return null; }
         }
 
         private void ShowHelp()
@@ -290,7 +353,7 @@ namespace SquadTools
             MessageBox.Show(this,
                 "1. 在左侧选择游戏地图。地图图片和尺寸已本地保存；切换后使用该地图的实际宽高。也可选择自定义图片 / 空白网格。\n\n" +
                 "2. 填写游戏网格坐标，如 D05-5-5。每个大格 300 米，九宫格顺序与数字小键盘一致。按最细小格中心计算。\n\n" +
-                "2. 地图左键放目标，右键放炮位；滚轮缩放，中键拖动。标点会吸附到三级九宫格中心，分辨率约 11.1 米。\n\n" +
+                "地图左键放目标，右键放炮位；滚轮缩放，中键拖动。地图点击保留实际位置，不吸附到网格中心；框内网格仅作参考，悬停可查看实际米制坐标。\n\n" +
                 "3. 默认自动读取本地地形高程，可关闭后手动输入高度。地形数据不含桥梁、房顶等附加高度；目标更高时高差为正。软件另计炮口高 1 米。\n\n" +
                 "4. 方位 0° 为北、90° 为东。密位采用 6400/圈；标准迫击炮可用角 800–1580 mil。飞行时间为理论估算。\n\n" +
                 "5. 导入地图须是裁齐地图范围的正方形图片，并正确设置地图边长。范围圈仅代表平地理论最大射程。\n\n" +
@@ -315,6 +378,7 @@ namespace SquadTools
             if (((FrameworkElement)Content).FindName("Copy") != null) throw new InvalidOperationException("Copy button was not removed.");
             mapSelector.SelectedItem = mapChoices[mapChoices.Count - 1];
             weaponGrid.Text = "D05-5-5"; targetGrid.Text = "F06-5-5";
+            TestPrecisePoints();
             string originalWeapon = weaponGrid.Text;
             string originalTarget = targetGrid.Text;
             targetGrid.Text = "!invalid";
@@ -344,13 +408,59 @@ namespace SquadTools
             map.MapImage = null;
             Topmost = true; Topmost = false;
             map.ZoomBy(1.3); map.ResetView();
+            PlacePoint(new Vec2(1012.34, 1321.09), true); PlacePoint(new Vec2(1601.72, 1522.65), false);
             mapSelector.SelectedItem = mapChoices.Find(delegate(MapChoice choice) { return choice.Id == "yehorivka"; });
+            if (preciseWeapon.HasValue || preciseTarget.HasValue) throw new InvalidOperationException("Map switch retained precise points from another map.");
+            var exactWeapon = new Vec2(2667.12, 3048.34);
+            var exactTarget = new Vec2(3267.89, 3348.56);
+            PlacePoint(exactWeapon, true); PlacePoint(exactTarget, false);
+            automaticHeight.IsChecked = false; automaticHeight.IsChecked = true;
+            if (map.Weapon.X != exactWeapon.X || map.Target.Y != exactTarget.Y || Math.Abs(Number(weaponHeight.Text, "height") - terrain.Sample(exactWeapon)) > 0.005001) throw new InvalidOperationException("Height mode lost precise positions or sampled the grid centre.");
             UpdateLayout();
             var bitmap = new RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(this);
             var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
             using (var file = File.Create(outputPath)) encoder.Save(file);
-            File.WriteAllText(Path.ChangeExtension(outputPath, ".txt"), "PASS: WPF startup, all " + bundledMaps + " map selections and dimensions, terrain activation, legacy manual fallback, copy button removed, invalid grid/height clearing and recovery, coincident points, map bounds, low-only fallback, local PNG pipeline, topmost, map zoom/reset, PNG render.\r\n", Encoding.UTF8);
+            File.WriteAllText(Path.ChangeExtension(outputPath, ".txt"), "PASS: WPF startup, all " + bundledMaps + " map selections and dimensions, terrain activation, legacy manual fallback, copy button removed, exact clicks, repeat clicks within one grid, independent manual edit, precise XML round trip, stale/nonfinite point rejection, precise map bounds, height-mode preservation and sampling, invalid grid/height clearing and recovery, coincident points, low-only fallback, local PNG pipeline, topmost, map zoom/reset, PNG render.\r\n", Encoding.UTF8);
+        }
+
+        private void TestPrecisePoints()
+        {
+            var mortar = new Vec2(1012.34, 1321.09);
+            var target = new Vec2(1600.72, 1522.65);
+            PlacePoint(mortar, true); PlacePoint(target, false);
+            if (map.Weapon.X != mortar.X || map.Weapon.Y != mortar.Y || map.Target.X != target.X || map.Target.Y != target.Y) throw new InvalidOperationException("Map click snapped to a grid centre.");
+            string sameGrid = targetGrid.Text;
+            target = new Vec2(1601.72, 1522.65); PlacePoint(target, false);
+            double expectedDistance = Math.Sqrt(Math.Pow(target.X - mortar.X, 2) + Math.Pow(target.Y - mortar.Y, 2));
+            if (targetGrid.Text != sameGrid || solution == null || Math.Abs(solution.Distance - expectedDistance) > 1e-8) throw new InvalidOperationException("Repeated clicks in the same grid did not update the solution.");
+
+            var xml = new StringBuilder();
+            using (var writer = XmlWriter.Create(xml, new XmlWriterSettings { OmitXmlDeclaration = true }))
+            {
+                writer.WriteStartElement("settings"); WritePrecisePoint(writer, "weapon", preciseWeapon); WritePrecisePoint(writer, "target", preciseTarget); writer.WriteEndElement();
+            }
+            var document = new XmlDocument { XmlResolver = null }; document.LoadXml(xml.ToString());
+            Vec2? restoredWeapon = ReadPrecisePoint(document, "weapon", weaponGrid.Text), restoredTarget = ReadPrecisePoint(document, "target", targetGrid.Text);
+            if (!restoredWeapon.HasValue || !restoredTarget.HasValue || restoredWeapon.Value.X != mortar.X || restoredWeapon.Value.Y != mortar.Y || restoredTarget.Value.X != target.X || restoredTarget.Value.Y != target.Y) throw new InvalidOperationException("Precise settings did not round trip.");
+            if (ReadPrecisePoint(document, "weapon", "A01").HasValue) throw new InvalidOperationException("Stale precise point was not rejected.");
+            document.SelectSingleNode("/settings/weaponX").InnerText = "NaN";
+            if (ReadPrecisePoint(document, "weapon", weaponGrid.Text).HasValue) throw new InvalidOperationException("Nonfinite precise point was not rejected.");
+            document.LoadXml("<settings />");
+            if (ReadPrecisePoint(document, "weapon", weaponGrid.Text).HasValue) throw new InvalidOperationException("Old settings must use grid centres.");
+
+            weaponHeight.Text = "40";
+            if (!preciseWeapon.HasValue || !preciseTarget.HasValue || map.Weapon.X != mortar.X) throw new InvalidOperationException("Height edit moved a point.");
+            mapSize.Text = "900";
+            if (solution != null || map.HasMarkers) throw new InvalidOperationException("Precise points were not checked against custom map bounds.");
+            mapSize.Text = "3000";
+            weaponGrid.Text = "D05-5-5";
+            if (preciseWeapon.HasValue || !preciseTarget.HasValue || map.Weapon.X != 1050 || map.Target.X != target.X) throw new InvalidOperationException("Manual edit did not clear only the edited point.");
+            targetGrid.Text = "invalid";
+            if (preciseTarget.HasValue || solution != null || map.HasMarkers) throw new InvalidOperationException("Invalid edit reused a previous precise point.");
+            preciseWeapon = null; preciseTarget = null;
+            weaponGrid.Text = "D05-5-5"; targetGrid.Text = "F06-5-5"; weaponHeight.Text = "0"; targetHeight.Text = "0";
+            Recalculate();
         }
 
         private const string Layout = @"
@@ -393,7 +503,7 @@ namespace SquadTools
         <TextBlock Text='游戏地图 · 标准迫击炮' FontSize='12' Foreground='#A0B2BE' Margin='0,0,0,7'/><ComboBox x:Name='MapSelector' Margin='0,0,0,13'/>
         <TextBlock Text='M   炮位坐标' Foreground='#B8EB7E' FontSize='12' Margin='0,0,0,7'/><TextBox x:Name='WeaponGrid' Text='D05-5-5' ToolTip='例如 D05-5-5，字母为列、数字为行'/>
         <TextBlock Text='T    目标坐标' Foreground='#FFA88C' FontSize='12' Margin='0,10,0,7'/><TextBox x:Name='TargetGrid' Text='F06-5-5'/>
-        <TextBlock Text='按最末级小格中心计算 · 300m 大格' Foreground='#728A9B' FontSize='10' Margin='0,7,0,10'/>
+        <TextBlock Text='点击精确定位 · 手输按小格中心计算' Foreground='#728A9B' FontSize='10' Margin='0,7,0,10'/>
         <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition/></Grid.ColumnDefinitions>
           <StackPanel><TextBlock Text='炮位地面高 / m' FontSize='11' Foreground='#A0B2BE' Margin='0,0,0,7'/><TextBox x:Name='WeaponHeight' Text='0'/></StackPanel>
           <StackPanel Grid.Column='2'><TextBlock Text='目标地面高 / m' FontSize='11' Foreground='#A0B2BE' Margin='0,0,0,7'/><TextBox x:Name='TargetHeight' Text='0'/></StackPanel>
@@ -425,7 +535,7 @@ namespace SquadTools
       </Grid>
     </Border>
   </Grid>
-  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  本地版 0.2' Foreground='#607B8E' FontSize='10'/><TextBlock Text='全官方地图 · 本地地形高程 · 无网络请求' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
+  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  本地版 0.2.1' Foreground='#607B8E' FontSize='10'/><TextBlock Text='全官方地图 · 本地地形高程 · 无网络请求' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
 </Grid>";
     }
 
