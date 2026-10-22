@@ -16,7 +16,7 @@ namespace SquadTools
 {
     public sealed class MainWindow : Window
     {
-        private TextBox weaponGrid, targetGrid, weaponHeight, targetHeight, mapSize;
+        private TextBox weaponGrid, targetGrid, weaponHeight, targetHeight;
         private TextBlock bearing, elevation, elevationLabel, distance, difference, flight, status, mapName;
         private TextBlock mapInfo, terrainNote, heightHint;
         private ComboBox mapSelector;
@@ -53,7 +53,6 @@ namespace SquadTools
             var root = (FrameworkElement)Content;
             weaponGrid = (TextBox)root.FindName("WeaponGrid"); targetGrid = (TextBox)root.FindName("TargetGrid");
             weaponHeight = (TextBox)root.FindName("WeaponHeight"); targetHeight = (TextBox)root.FindName("TargetHeight");
-            mapSize = (TextBox)root.FindName("MapSize");
             bearing = (TextBlock)root.FindName("Bearing"); elevation = (TextBlock)root.FindName("Elevation");
             elevationLabel = (TextBlock)root.FindName("ElevationLabel");
             distance = (TextBlock)root.FindName("Distance"); difference = (TextBlock)root.FindName("Difference"); flight = (TextBlock)root.FindName("Flight");
@@ -77,7 +76,7 @@ namespace SquadTools
             automaticHeight.Unchecked += delegate { if (!loading) { preferAutomaticHeight = false; UpdateHeightMode(); Recalculate(); } };
             weaponGrid.TextChanged += delegate { if (!loading) { preciseWeapon = null; Recalculate(); } };
             targetGrid.TextChanged += delegate { if (!loading) { preciseTarget = null; Recalculate(); } };
-            foreach (var box in new[] { weaponHeight, targetHeight, mapSize }) box.TextChanged += delegate { if (!loading) Recalculate(); };
+            foreach (var box in new[] { weaponHeight, targetHeight }) box.TextChanged += delegate { if (!loading) Recalculate(); };
             foreach (MapDefinition definition in MapCatalog.Load(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "maps"))) mapChoices.Add(new MapChoice { Definition = definition });
             mapChoices.Add(new MapChoice());
             mapSelector.ItemsSource = mapChoices;
@@ -108,26 +107,18 @@ namespace SquadTools
             bool wasLoading = loading; loading = true;
             try
             {
-                if (selectedMap == null)
-                {
-                    double previous;
-                    if (double.TryParse(mapSize.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out previous) && previous >= 300 && previous <= 7800) customMapSize = previous;
-                }
                 var choice = (MapChoice)mapSelector.SelectedItem;
                 selectedMap = choice.Definition; terrain = null; mapError = null;
                 map.MapImage = null;
                 if (selectedMap == null)
                 {
-                    mapSize.Text = customMapSize.ToString("0.##", CultureInfo.InvariantCulture);
-                    mapSize.IsReadOnly = false;
                     map.WorldSize = customMapSize; map.WorldHeight = customMapSize;
                     if (File.Exists(ImagePath)) map.MapImage = ReadImage(ImagePath);
                     mapName.Text = map.MapImage == null ? "离线坐标网格" : "自定义离线地图";
-                    mapInfo.Text = "自定义地图需自行填写真实边长";
+                    mapInfo.Text = string.Format(CultureInfo.InvariantCulture, "{0:0.##} × {0:0.##} m · 自定义标定", customMapSize);
                 }
                 else
                 {
-                    mapSize.Text = selectedMap.Width.ToString("0.##", CultureInfo.InvariantCulture); mapSize.IsReadOnly = true;
                     map.WorldSize = selectedMap.Width; map.WorldHeight = selectedMap.Height;
                     mapName.Text = selectedMap.Name;
                     mapInfo.Text = string.Format(CultureInfo.InvariantCulture, "{0:0.##} × {1:0.##} m · 已标定", selectedMap.Width, selectedMap.Height);
@@ -183,7 +174,7 @@ namespace SquadTools
             try
             {
                 if (mapError != null) throw new FormatException(mapError);
-                double width = selectedMap == null ? Number(mapSize.Text, "地图边长：") : selectedMap.Width;
+                double width = selectedMap == null ? customMapSize : selectedMap.Width;
                 if (width < 300 || width > 7800) throw new FormatException("地图边长应为 300–7800 米。");
                 map.WorldSize = width; map.WorldHeight = selectedMap == null ? width : selectedMap.Height;
                 Vec2 mortar = GridReference.Parse(weaponGrid.Text), target = GridReference.Parse(targetGrid.Text);
@@ -256,13 +247,41 @@ namespace SquadTools
                 BitmapSource image = ReadImage(dialog.FileName);
                 if (image.PixelWidth > 12000 || image.PixelHeight > 12000) throw new InvalidDataException("图片过大，请缩小到 12000 像素以内。");
                 if (Math.Abs((double)image.PixelWidth / image.PixelHeight - 1) > 0.01) throw new InvalidDataException("请使用正方形地图，并裁去界面边框、图例与空白。否则坐标无法准确对齐。");
+                double? size = AskCustomMapSize();
+                if (!size.HasValue) return;
                 Directory.CreateDirectory(dataDirectory);
                 var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
                 using (var stream = File.Create(ImagePath)) encoder.Save(stream);
-                mapSelector.SelectedItem = mapChoices[mapChoices.Count - 1]; ApplySelectedMap(false);
-                MessageBox.Show(this, "图片已保存到软件的 data 文件夹，可离线使用。\n\n请设置地图真实边长（米）。图像左上角必须对应 A01 左上角。\n图片没有高程信息，两处地面高度仍需手动填写。", "地图已导入");
+                bool wasLoading = loading; loading = true;
+                try { customMapSize = size.Value; mapSelector.SelectedItem = mapChoices[mapChoices.Count - 1]; }
+                finally { loading = wasLoading; }
+                ApplySelectedMap(true);
+                MessageBox.Show(this, "图片与尺寸标定已保存，可离线使用。\n\n图像左上角必须对应 A01 左上角。图片没有高程信息，两处地面高度仍需手动填写。", "地图已导入");
             }
             catch (Exception ex) { MessageBox.Show(this, "导入失败：" + ex.Message + "\n建议使用 PNG 或 JPEG 图片。", "地图导入"); }
+        }
+
+        private double? AskCustomMapSize()
+        {
+            var dialog = new Window { Title = "标定自定义地图", Owner = this, Width = 420, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Background, Foreground = Brushes.White, FontFamily = FontFamily };
+            var panel = new StackPanel { Margin = new Thickness(22) };
+            panel.Children.Add(new TextBlock { Text = "地图实际边长（米）", FontSize = 16, Margin = new Thickness(0, 0, 0, 12) });
+            var input = new TextBox { Text = customMapSize.ToString("0.##", CultureInfo.InvariantCulture), FontSize = 16, Padding = new Thickness(8), Background = new SolidColorBrush(Color.FromRgb(25, 42, 54)), Foreground = Brushes.White, CaretBrush = Brushes.White };
+            panel.Children.Add(input);
+            panel.Children.Add(new TextBlock { Text = "用于将图片上的位置换算为游戏距离。请填写整张正方形地图的真实边长；内置地图无需设置。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new Thickness(0, 10, 0, 12) });
+            var error = new TextBlock { Foreground = Brushes.Salmon, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) }; panel.Children.Add(error);
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var cancel = new Button { Content = "取消", IsCancel = true, Padding = new Thickness(16, 7, 16, 7), Margin = new Thickness(0, 0, 10, 0) };
+            var accept = new Button { Content = "导入", IsDefault = true, Padding = new Thickness(16, 7, 16, 7) };
+            double result = customMapSize;
+            accept.Click += delegate
+            {
+                try { result = Number(input.Text, "地图边长："); if (result < 300 || result > 7800) throw new FormatException("请输入 300–7800 米之间的地图边长。"); dialog.DialogResult = true; }
+                catch (FormatException ex) { error.Text = ex.Message; input.Focus(); }
+            };
+            buttons.Children.Add(cancel); buttons.Children.Add(accept); panel.Children.Add(buttons); dialog.Content = panel;
+            dialog.Loaded += delegate { input.Focus(); input.SelectAll(); };
+            return dialog.ShowDialog() == true ? (double?)result : null;
         }
 
         private static BitmapSource ReadImage(string path)
@@ -289,9 +308,12 @@ namespace SquadTools
                 if (File.Exists(path))
                 {
                     var document = new XmlDocument { XmlResolver = null }; document.Load(path);
-                    var boxes = new[] { weaponGrid, targetGrid, weaponHeight, targetHeight, mapSize };
-                    var names = new[] { "weapon", "target", "weaponHeight", "targetHeight", "mapSize" };
+                    var boxes = new[] { weaponGrid, targetGrid, weaponHeight, targetHeight };
+                    var names = new[] { "weapon", "target", "weaponHeight", "targetHeight" };
                     for (int i = 0; i < names.Length; i++) { XmlNode node = document.SelectSingleNode("/settings/" + names[i]); if (node != null) boxes[i].Text = node.InnerText; }
+                    XmlNode sizeNode = document.SelectSingleNode("/settings/mapSize");
+                    double savedSize;
+                    if (sizeNode != null && double.TryParse(sizeNode.InnerText, NumberStyles.Float, CultureInfo.InvariantCulture, out savedSize) && savedSize >= 300 && savedSize <= 7800) customMapSize = savedSize;
                     XmlNode mapNode = document.SelectSingleNode("/settings/mapId");
                     if (mapNode != null) restoredMapId = mapNode.InnerText;
                     else if (File.Exists(ImagePath)) restoredMapId = "custom";
@@ -313,8 +335,6 @@ namespace SquadTools
                 using (var writer = XmlWriter.Create(Path.Combine(dataDirectory, "settings.xml"), settings))
                 {
                     writer.WriteStartElement("settings");
-                    double size;
-                    if (selectedMap == null && double.TryParse(mapSize.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out size) && size >= 300 && size <= 7800) customMapSize = size;
                     string[] names = { "weapon", "target", "weaponHeight", "targetHeight", "mapSize", "mapId", "automaticHeight" };
                     string[] values = { weaponGrid.Text, targetGrid.Text, weaponHeight.Text, targetHeight.Text, customMapSize.ToString("0.##", CultureInfo.InvariantCulture), ((MapChoice)mapSelector.SelectedItem).Id, preferAutomaticHeight ? "true" : "false" };
                     for (int i = 0; i < names.Length; i++) writer.WriteElementString(names[i], values[i]);
@@ -356,7 +376,7 @@ namespace SquadTools
                 "地图左键放目标，右键放炮位；滚轮缩放，中键拖动。地图点击保留实际位置，不吸附到网格中心；框内网格仅作参考，悬停可查看实际米制坐标。\n\n" +
                 "3. 默认自动读取本地地形高程，可关闭后手动输入高度。地形数据不含桥梁、房顶等附加高度；目标更高时高差为正。软件另计炮口高 1 米。\n\n" +
                 "4. 方位 0° 为北、90° 为东。密位采用 6400/圈；标准迫击炮可用角 800–1580 mil。飞行时间为理论估算。\n\n" +
-                "5. 导入地图须是裁齐地图范围的正方形图片，并正确设置地图边长。范围圈仅代表平地理论最大射程。\n\n" +
+                "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
                 "贝拉亚为暂退役的旧版地图，仅提供底图和手动高差。本版不判断地形遮挡，不含 OCR 或游戏读取，命中精度尚未经游戏实测。\n\n" +
                 "算法及游戏参数参考 sh4rkman/SquadCalc（非商业许可）。地图素材归各自权利人。详见随附说明与 third_party。",
                 "使用说明 · 游戏 Squad 专用");
@@ -376,6 +396,7 @@ namespace SquadTools
             }
             if (bundledMaps < 25) throw new InvalidOperationException("Incomplete map catalog.");
             if (((FrameworkElement)Content).FindName("Copy") != null) throw new InvalidOperationException("Copy button was not removed.");
+            if (((FrameworkElement)Content).FindName("MapSize") != null) throw new InvalidOperationException("Redundant map size field was not removed.");
             mapSelector.SelectedItem = mapChoices[mapChoices.Count - 1];
             weaponGrid.Text = "D05-5-5"; targetGrid.Text = "F06-5-5";
             TestPrecisePoints();
@@ -451,9 +472,9 @@ namespace SquadTools
 
             weaponHeight.Text = "40";
             if (!preciseWeapon.HasValue || !preciseTarget.HasValue || map.Weapon.X != mortar.X) throw new InvalidOperationException("Height edit moved a point.");
-            mapSize.Text = "900";
+            customMapSize = 900; Recalculate();
             if (solution != null || map.HasMarkers) throw new InvalidOperationException("Precise points were not checked against custom map bounds.");
-            mapSize.Text = "3000";
+            customMapSize = 3000; Recalculate();
             weaponGrid.Text = "D05-5-5";
             if (preciseWeapon.HasValue || !preciseTarget.HasValue || map.Weapon.X != 1050 || map.Target.X != target.X) throw new InvalidOperationException("Manual edit did not clear only the edited point.");
             targetGrid.Text = "invalid";
@@ -525,17 +546,17 @@ namespace SquadTools
       </ScrollViewer>
     </Border>
     <Border Grid.Column='2' Background='#101B24' BorderBrush='#283B49' BorderThickness='1' CornerRadius='8'>
-      <Grid><Grid.RowDefinitions><RowDefinition Height='56'/><RowDefinition Height='*'/><RowDefinition Height='79'/></Grid.RowDefinitions>
+      <Grid><Grid.RowDefinitions><RowDefinition Height='56'/><RowDefinition Height='*'/><RowDefinition Height='56'/></Grid.RowDefinitions>
         <DockPanel Margin='16,0' LastChildFill='False'><StackPanel DockPanel.Dock='Left' Orientation='Horizontal' VerticalAlignment='Center'><StackPanel Width='230' Margin='0,0,16,0'><TextBlock x:Name='MapName' Text='离线坐标网格' FontWeight='SemiBold' TextTrimming='CharacterEllipsis'/><TextBlock x:Name='MapInfo' Foreground='#8196A5' FontSize='10' Margin='0,4,0,0'/></StackPanel><RadioButton x:Name='PlaceTarget' Content='放目标' IsChecked='True' GroupName='Mode'/><RadioButton x:Name='PlaceMortar' Content='放炮位' GroupName='Mode'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ZoomOut' Content='−' Padding='11,5' Margin='0,0,5,0'/><Button x:Name='ZoomIn' Content='+' Padding='11,5' Margin='0,0,5,0'/><Button x:Name='ResetView' Content='全图' Padding='10,5'/></StackPanel></DockPanel>
         <Border Grid.Row='1' x:Name='MapHost' BorderBrush='#283B49' BorderThickness='0,1'/>
         <Grid Grid.Row='2' Margin='16,10'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions>
-          <StackPanel><StackPanel Orientation='Horizontal'><TextBlock Text='地图边长 / m' FontSize='11' Foreground='#91A5B4' VerticalAlignment='Center' Margin='0,0,10,0'/><TextBox x:Name='MapSize' Text='3000' Width='77' Padding='8,4' FontSize='12'/></StackPanel><TextBlock Text='左键目标 · 右键炮位 · 滚轮缩放 · 中键拖动' Foreground='#728A9B' FontSize='10' Margin='0,7,0,0'/></StackPanel>
-          <StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Top'><Button x:Name='ClearMap' Content='空白网格' Margin='0,0,8,0'/><Button x:Name='ImportMap' Content='导入自定义图片'/></StackPanel>
+          <TextBlock Text='左键目标 · 右键炮位 · 滚轮缩放 · 中键拖动' Foreground='#728A9B' FontSize='11' VerticalAlignment='Center'/>
+          <StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ClearMap' Content='空白网格' Margin='0,0,8,0'/><Button x:Name='ImportMap' Content='导入自定义图片'/></StackPanel>
         </Grid>
       </Grid>
     </Border>
   </Grid>
-  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  本地版 0.2.1' Foreground='#607B8E' FontSize='10'/><TextBlock Text='全官方地图 · 本地地形高程 · 无网络请求' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
+  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  本地版 0.2.2' Foreground='#607B8E' FontSize='10'/><TextBlock Text='全官方地图 · 本地地形高程 · 无网络请求' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
 </Grid>";
     }
 

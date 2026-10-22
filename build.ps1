@@ -1,4 +1,4 @@
-param([switch]$Test)
+param([switch]$Test, [switch]$Benchmark)
 $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
 $taskFramework = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
@@ -39,7 +39,21 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0) { throw 'Map test compilation failed.' }
     & (Join-Path $taskBuild 'MapTests.exe') (Join-Path $taskOutput 'maps')
     if ($LASTEXITCODE -ne 0) { throw 'Map tests failed.' }
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'MapRenderTests.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'tests\MapRenderTests.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Map render test compilation failed.' }
+    & (Join-Path $taskBuild 'MapRenderTests.exe') (Join-Path $taskMapRoot 'images\blackcoast.jpg') (Join-Path $taskBuild 'map-render-preview.png')
+    if ($LASTEXITCODE -ne 0) { throw 'Map render tests failed.' }
     $taskSmoke = Start-Process -FilePath (Join-Path $taskOutput 'SquadTools.exe') -ArgumentList @('--smoke-test', ('"' + (Join-Path $taskBuild 'desktop-preview.png') + '"')) -WindowStyle Hidden -Wait -PassThru
     if ($taskSmoke.ExitCode -ne 0) { throw 'Desktop smoke test failed. See build\desktop-preview.txt.' }
     Get-Content -LiteralPath (Join-Path $taskBuild 'desktop-preview.txt')
+}
+if ($Benchmark) {
+    $taskBuild = Join-Path $taskRoot 'build'
+    New-Item -ItemType Directory -Path $taskBuild -Force | Out-Null
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'RenderBenchmark.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'tests\RenderBenchmark.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Render benchmark compilation failed.' }
+    $taskMeasurements = & (Join-Path $taskBuild 'RenderBenchmark.exe') (Join-Path $taskMapRoot 'images\blackcoast.jpg')
+    if ($LASTEXITCODE -ne 0) { throw 'Render benchmark failed.' }
+    $taskMeasurements | Set-Content -LiteralPath (Join-Path $taskBuild 'render-after.txt') -Encoding UTF8
+    $taskMeasurements | Write-Output
 }
