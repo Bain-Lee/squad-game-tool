@@ -9,4 +9,7 @@ accompanying third_party/SquadCalc.LICENSE. That complete copyright and license
 notice must accompany copies or redistribution of this project.
 
 No license to Squad SDK map images, icons, heightmaps, or other game assets is
-granted by this notice. Those assets are not included in this prototype.
+granted by this notice. The local portable build includes separately downloaded
+map data for the user's local use, attributed to Offworld Industries and the
+SquadCalc data service. See maps/README.md (assets/maps/README.md in source).
+These game assets are excluded from Git and are not covered by the code license.

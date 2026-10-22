@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='utf-8'?>
+<maps sourceCommit="24828d6d3081c7ce52b10ef39ec86036ebf010b5" generated="2026-10-22" source="https://squadcalc.app/api">
+  <map id="albasrah" name="Al Basrah" width="4000.0" height="4000.0" heightScale="0.087813952" heightOffset="2.0" displayName="Al Basrah" image="images/albasrah.jpg" heightmap="heights/albasrah.png" />
+  <map id="anvil" name="Anvil" width="3060.0" height="3060.0" heightScale="0.226426712" heightOffset="-71.5835" displayName="Anvil" image="images/anvil.jpg" heightmap="heights/anvil.png" />
+  <map id="blackcoast" name="Black Coast" width="4598.0" height="4599.0" heightScale="0.358381824" heightOffset="-31.0188" displayName="Black Coast" image="images/blackcoast.jpg" heightmap="heights/blackcoast.png" />
+  <map id="chora" name="Chora" width="4064.0" height="4064.0" heightScale="0.982942589" heightOffset="-793.5477" displayName="Chora" image="images/chora.jpg" heightmap="heights/chora.png" />
+  <map id="fallujah" name="Fallujah" width="3005.0" height="3005.0" heightScale="0.14797459" heightOffset="-48.43" displayName="Fallujah" image="images/fallujah.jpg" heightmap="heights/fallujah.png" />
+  <map id="foolsroad" name="Fool's Road" width="1774.0" height="1774.0" heightScale="0.20168671" heightOffset="-61.5903" displayName="Fool's Road" image="images/foolsroad.jpg" heightmap="heights/foolsroad.png" />
+  <map id="goosebay" name="Goose Bay" width="4031.0" height="4031.0" heightScale="0.274412178" heightOffset="-245.0" displayName="Goose Bay" image="images/goosebay.jpg" heightmap="heights/goosebay.png" />
+  <map id="gorodok" name="Gorodok" width="4064.0" height="4064.0" heightScale="0.173697718" heightOffset="-62.8744" displayName="Gorodok" image="images/gorodok.jpg" heightmap="heights/gorodok.png" />
+  <map id="harju" name="Harju" width="4032.0" height="4032.0" heightScale="0.229927482" heightOffset="-21.1422" displayName="Harju" image="images/harju.jpg" heightmap="heights/harju.png" />
+  <map id="jensen" name="Jensen's Range" width="4008.0" height="4008.0" heightScale="0.185722727" heightOffset="-15.5078" displayName="Jensen's Range" image="images/jensen.jpg" heightmap="heights/jensen.png" />
+  <map id="kamdesh" name="Kamdesh Highlands" width="4032.0" height="4032.0" heightScale="0.387570609" heightOffset="31.6808" displayName="Kamdesh Highlands" image="images/kamdesh.jpg" heightmap="heights/kamdesh.png" />
+  <map id="kohat" name="Kohat Toi" width="4617.0" height="4617.0" heightScale="0.750167993" heightOffset="9.4085" displayName="Kohat Toi" image="images/kohat.jpg" heightmap="heights/kohat.png" />
+  <map id="kokan" name="Kokan" width="2496.0" height="2496.0" heightScale="0.174065564" heightOffset="-255.0" displayName="Kokan" image="images/kokan.jpg" heightmap="heights/kokan.png" />
+  <map id="lashkar" name="Lashkar Valley" width="4334.0" height="4334.0" heightScale="0.321048558" heightOffset="1.9652" displayName="Lashkar Valley" image="images/lashkar.jpg" heightmap="heights/lashkar.png" />
+  <map id="logar" name="Logar Valley" width="1761.0" height="1761.0" heightScale="0.248098348" heightOffset="4.1729" displayName="Logar Valley" image="images/logar.jpg" heightmap="heights/logar.png" />
+  <map id="manicouagan" name="Manicouagan" width="4031.0" height="4031.0" heightScale="0.403959641" heightOffset="38.0" displayName="Manicouagan" image="images/manicouagan.jpg" heightmap="heights/manicouagan.png" />
+  <map id="mestia" name="Mestia" width="2400.0" height="2400.0" heightScale="0.493831859" heightOffset="-153.9385" displayName="Mestia" image="images/mestia.jpg" heightmap="heights/mestia.png" />
+  <map id="mutaha" name="Mutaha" width="2755.0" height="2755.0" heightScale="0.112586966" heightOffset="-8.7821" displayName="Mutaha" image="images/mutaha.jpg" heightmap="heights/mutaha.png" />
+  <map id="narva" name="Narva" width="2800.0" height="2800.0" heightScale="0.205154741" heightOffset="-17.9298" displayName="Narva" image="images/narva.jpg" heightmap="heights/narva.png" />
+  <map id="pacific" name="Pacific Proving Grounds" width="4032.0" height="4032.0" heightScale="0.317704444" heightOffset="-79.18" displayName="Pacific Proving Grounds" image="images/pacific.jpg" heightmap="heights/pacific.png" />
+  <map id="sanxian" name="Sanxian Islands" width="4600.0" height="4600.0" heightScale="0.233953671" heightOffset="0.0" displayName="Sanxian Islands" image="images/sanxian.jpg" heightmap="heights/sanxian.png" />
+  <map id="skorpo" name="Skorpo" width="6849.0" height="6869.0" heightScale="2.086916336" heightOffset="-360.7172" displayName="Skorpo" image="images/skorpo.jpg" heightmap="heights/skorpo.png" />
+  <map id="sumari" name="Sumari Bala" width="1300.0" height="1300.0" heightScale="0.267739565" heightOffset="-138.0639" displayName="Sumari Bala" image="images/sumari.jpg" heightmap="heights/sumari.png" />
+  <map id="tallil" name="Tallil Outskirts" width="4680.0" height="4680.0" heightScale="0.152035884" heightOffset="-83.457" displayName="Tallil Outskirts" image="images/tallil.jpg" heightmap="heights/tallil.png" />
+  <map id="yehorivka" name="Yehorivka" width="6350.0" height="6350.0" heightScale="0.485970247" heightOffset="-65.4916" displayName="Yehorivka" image="images/yehorivka.jpg" heightmap="heights/yehorivka.png" />
+  <map id="belaya" name="Belaya Pass (Legacy)" width="3904.0" height="3905.0" heightScale="0" heightOffset="0" displayName="贝拉亚（旧版） / Belaya" image="images/belaya.jpg" heightmap="" legacy="true" />
+</maps>

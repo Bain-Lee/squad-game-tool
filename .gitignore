@@ -1,5 +1,10 @@
 /build/
 /dist/
 /SquadTools-portable.zip
+/assets/maps/images/
+/assets/maps/heights/
+/assets/maps/source/
+__pycache__/
+*.part
 *.pdb
 *.tmp

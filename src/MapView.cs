@@ -10,6 +10,7 @@ namespace SquadTools
     public sealed class MapView : FrameworkElement
     {
         public double WorldSize = 3000;
+        public double WorldHeight = 3000;
         public Vec2 Weapon;
         public Vec2 Target;
         public bool HasMarkers;
@@ -35,9 +36,9 @@ namespace SquadTools
             SizeChanged += delegate { InvalidateVisual(); };
         }
 
-        private double BaseScale { get { return Math.Max(1, Math.Min(ActualWidth - 90, ActualHeight - 70)) / WorldSize; } }
+        private double BaseScale { get { return Math.Max(0.001, Math.Min((ActualWidth - 70) / WorldSize, (ActualHeight - 56) / WorldHeight)); } }
         private double Scale { get { return BaseScale * zoom; } }
-        private Point Origin { get { return new Point((ActualWidth - WorldSize * Scale) / 2 + pan.X, (ActualHeight - WorldSize * Scale) / 2 + pan.Y); } }
+        private Point Origin { get { return new Point((ActualWidth - WorldSize * Scale) / 2 + pan.X, (ActualHeight - WorldHeight * Scale) / 2 + pan.Y); } }
         private Point Screen(Vec2 p) { Point o = Origin; return new Point(o.X + p.X * Scale, o.Y + p.Y * Scale); }
         private Vec2 World(Point p) { Point o = Origin; return new Vec2((p.X - o.X) / Scale, (p.Y - o.Y) / Scale); }
         public void ResetView() { zoom = 1; pan = new Vector(); InvalidateVisual(); }
@@ -64,7 +65,7 @@ namespace SquadTools
             }
             if (e.ChangedButton != MouseButton.Left && e.ChangedButton != MouseButton.Right) return;
             Vec2 p = World(e.GetPosition(this));
-            if (p.X < 0 || p.Y < 0 || p.X >= WorldSize || p.Y >= WorldSize) return;
+            if (p.X < 0 || p.Y < 0 || p.X >= WorldSize || p.Y >= WorldHeight) return;
             if (PointPlaced != null) PointPlaced(p, e.ChangedButton == MouseButton.Right || PlaceWeapon);
             e.Handled = true;
         }
@@ -87,7 +88,7 @@ namespace SquadTools
             if (ActualWidth < 10 || ActualHeight < 10) return;
             Point origin = Origin;
             double side = WorldSize * Scale;
-            Rect bounds = new Rect(origin.X, origin.Y, side, side);
+            Rect bounds = new Rect(origin.X, origin.Y, side, WorldHeight * Scale);
             dc.DrawRectangle(Brush("#182630"), new Pen(Brush("#3C5262"), 1), bounds);
             if (MapImage != null) dc.DrawImage(MapImage, bounds);
             dc.PushClip(new RectangleGeometry(bounds));
@@ -97,21 +98,30 @@ namespace SquadTools
                 double radius = Ballistics.Velocity * Ballistics.Velocity / Ballistics.Gravity * Scale;
                 dc.DrawEllipse(Brush("#0EAECE75"), new Pen(Brush("#5075BC92"), 1) { DashStyle = DashStyles.Dash }, Screen(Weapon), radius, radius);
             }
-            int cells = (int)Math.Ceiling(WorldSize / 300);
-            for (int i = 0; i <= cells; i++)
+            int columns = (int)Math.Ceiling(WorldSize / 300);
+            int rows = (int)Math.Ceiling(WorldHeight / 300);
+            for (int i = 0; i <= Math.Max(columns, rows); i++)
             {
-                double value = Math.Min(i * 300, WorldSize);
-                Point a = Screen(new Vec2(value, 0)), b = Screen(new Vec2(value, WorldSize));
-                Point c = Screen(new Vec2(0, value)), d = Screen(new Vec2(WorldSize, value));
-                var pen = new Pen(Brush(MapImage == null ? "#344653" : "#80CFD9DA"), 1);
-                dc.DrawLine(pen, a, b); dc.DrawLine(pen, c, d);
-                if (300 * Scale > 22 && i < cells)
+                var pen = new Pen(Brush(MapImage == null ? "#344653" : "#50CFD9DA"), 1);
+                if (i <= columns)
                 {
-                    double mid = (value + Math.Min(value + 300, WorldSize)) / 2;
-                    Point label = Screen(new Vec2(mid, 0));
-                    Text(dc, ((char)('A' + i)).ToString(), label.X - 5, Math.Max(6, origin.Y + 5), 12, "#C6D3D9");
-                    label = Screen(new Vec2(0, mid));
-                    Text(dc, (i + 1).ToString("00"), Math.Max(8, origin.X + 6), label.Y - 7, 11, "#C6D3D9");
+                    double value = Math.Min(i * 300, WorldSize);
+                    dc.DrawLine(pen, Screen(new Vec2(value, 0)), Screen(new Vec2(value, WorldHeight)));
+                    if (300 * Scale > 16 && i < columns)
+                    {
+                        Point label = Screen(new Vec2((value + Math.Min(value + 300, WorldSize)) / 2, 0));
+                        Text(dc, ((char)('A' + i)).ToString(), label.X - 5, Math.Max(6, origin.Y + 5), 12, "#EDF3F5");
+                    }
+                }
+                if (i <= rows)
+                {
+                    double value = Math.Min(i * 300, WorldHeight);
+                    dc.DrawLine(pen, Screen(new Vec2(0, value)), Screen(new Vec2(WorldSize, value)));
+                    if (300 * Scale > 16 && i < rows)
+                    {
+                        Point label = Screen(new Vec2(0, (value + Math.Min(value + 300, WorldHeight)) / 2));
+                        Text(dc, (i + 1).ToString("00"), Math.Max(8, origin.X + 6), label.Y - 7, 11, "#EDF3F5");
+                    }
                 }
             }
             if (300 * Scale > 160)
@@ -120,9 +130,10 @@ namespace SquadTools
                 for (double m = 100; m < WorldSize; m += 100)
                 {
                     if (Math.Abs(m % 300) < 0.1) continue;
-                    dc.DrawLine(minor, Screen(new Vec2(m, 0)), Screen(new Vec2(m, WorldSize)));
-                    dc.DrawLine(minor, Screen(new Vec2(0, m)), Screen(new Vec2(WorldSize, m)));
+                    dc.DrawLine(minor, Screen(new Vec2(m, 0)), Screen(new Vec2(m, WorldHeight)));
                 }
+                for (double m = 100; m < WorldHeight; m += 100)
+                    if (Math.Abs(m % 300) >= 0.1) dc.DrawLine(minor, Screen(new Vec2(0, m)), Screen(new Vec2(WorldSize, m)));
             }
             if (HasMarkers)
             {
@@ -131,8 +142,8 @@ namespace SquadTools
                 Marker(dc, a, "M", "#B8EB7E"); Marker(dc, b, "T", "#FFA88C");
                 double distance = Math.Sqrt(Math.Pow(Target.X - Weapon.X, 2) + Math.Pow(Target.Y - Weapon.Y, 2));
                 Point mid = new Point((a.X + b.X) / 2, (a.Y + b.Y) / 2);
-                dc.DrawRoundedRectangle(Brush("#ED101B24"), null, new Rect(mid.X - 38, mid.Y - 13, 92, 26), 5, 5);
-                Text(dc, distance.ToString("F0") + " m", mid.X - 26, mid.Y - 9, 12, "#EFE9C8");
+                dc.DrawRoundedRectangle(Brush("#ED101B24"), null, new Rect(mid.X - 38, mid.Y - 43, 92, 26), 5, 5);
+                Text(dc, distance.ToString("F0") + " m", mid.X - 26, mid.Y - 39, 12, "#EFE9C8");
             }
             dc.Pop();
             Text(dc, "N", ActualWidth - 35, 17, 15, "#C4D0D6");
