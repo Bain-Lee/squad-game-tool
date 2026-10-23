@@ -62,7 +62,7 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\fetch-maps.ps1 -SourceCommit 24828d6d3081c7ce52b10ef39ec86036ebf010b5
 ```
 
-此步骤需要联网，以及一个**已经存在且支持 WebP 的 Python/Pillow 环境**。脚本会优先查找本机 Codex 附带的 Python，也可通过 `-PythonPath` 指定其他已有环境；不会自行安装或下载 Python、Pillow 等运行环境。本机已验证附带的 Pillow/WebP 解码可用；这只是重新取得地图的工具，不是软件运行或普通编译的依赖。重复执行会复用已下载地图，`-Force` 可重新下载。元数据、图片格式与校验值说明见 [assets/maps/README.md](assets/maps/README.md)。
+此步骤需要联网，以及一个**已经存在且支持 WebP 的 Python/Pillow 环境**。脚本会优先查找本机 Codex 附带的 Python，也可通过 `-PythonPath` 指定其他已有环境；不会自行安装或下载 Python、Pillow 等运行环境。本机已验证附带的 Pillow/WebP 解码可用；这只是重新取得地图的工具，不是软件运行或普通编译的依赖。重复执行只复用与来源提交及地图参数一致、校验和解码均通过的完整缓存，否则会重新下载；`-Force` 可强制重新下载。整套新资源准备完成后才替换原地图目录，下载失败保留原数据。元数据、图片格式与校验值说明见 [assets/maps/README.md](assets/maps/README.md)。
 
 地图资源齐备后，在包含 `build.ps1` 的源码项目目录编译并验证（便携包仅包含运行文件、地图与文档）：
 
@@ -71,6 +71,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Test
 ```
 
 执行策略参数仅作用于当次 PowerShell 进程，不修改系统执行策略。构建脚本只调用现有编译器并生成项目内文件，不下载、不安装；它会检查地图资源是否齐备。输出软件位于 `dist/SquadTools.exe`，并把地图复制到 `dist/maps/`；核心、地图测试与桌面验证截图位于 `build/`。测试模式不读写用户的 `data` 设置。
+
+修改地图下载脚本后，可单独使用已有 Python/Pillow 运行离线回归测试（将路径替换为本机已有解释器）：
+
+```powershell
+& 'C:\path\to\python.exe' -m unittest discover -s tests -p 'test_fetch_maps.py' -v
+```
+
+这些测试用临时小图片模拟下载、缓存验证和目录替换失败，不访问网络、不修改实际地图目录，也不属于普通编译的必需步骤。
 
 详细环境盘点见 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)，网页与源码分析见 [docs/RESEARCH.md](docs/RESEARCH.md)，拖动优化的性能对比与验证范围见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
 
