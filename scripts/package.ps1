@@ -4,7 +4,7 @@ $taskDist = [IO.Path]::GetFullPath((Join-Path $taskRoot 'dist'))
 $taskArchive = Join-Path $taskRoot 'SquadTools-portable.zip'
 $taskTemp = Join-Path $taskRoot ('SquadTools-package-' + [Guid]::NewGuid().ToString('N') + '.tmp')
 $taskFiles = @()
-foreach ($taskName in @('SquadTools.exe','Steamworks.NET.dll','steam_api64.dll','README.md','LICENSE')) {
+foreach ($taskName in @('SquadTools.exe','README.md','LICENSE')) {
     $taskPath = Join-Path $taskDist $taskName
     if (-not (Test-Path -LiteralPath $taskPath -PathType Leaf)) { throw ('Missing package file: ' + $taskName + '. Run build.ps1 first.') }
     $taskFiles += Get-Item -LiteralPath $taskPath
@@ -32,10 +32,11 @@ try {
     $taskZip = [IO.Compression.ZipFile]::OpenRead($taskTemp)
     try {
         if ($taskZip.Entries.Count -ne $taskFiles.Count) { throw 'Package file count mismatch.' }
-        foreach ($taskRequired in @('SquadTools.exe','Steamworks.NET.dll','steam_api64.dll','maps/catalog.xml','docs/SERVER_BROWSER.md')) {
+        foreach ($taskRequired in @('SquadTools.exe','maps/catalog.xml','docs/SERVER_BROWSER.md')) {
             if (-not $taskZip.GetEntry($taskRequired)) { throw ('Package verification failed: ' + $taskRequired) }
         }
         if ($taskZip.Entries | Where-Object { $_.FullName -like 'data/*' }) { throw 'User settings must not be packaged.' }
+        if ($taskZip.Entries | Where-Object { $_.FullName -match '(^|/)(Steamworks\.NET\.dll|steam_api64\.dll)$|^third_party/Steamworks\.NET/' }) { throw 'Obsolete Steam join components must not be packaged.' }
     } finally { $taskZip.Dispose() }
     if (Test-Path -LiteralPath $taskArchive) { [IO.File]::Replace($taskTemp, $taskArchive, [System.Management.Automation.Language.NullString]::Value) } else { [IO.File]::Move($taskTemp, $taskArchive) }
     Write-Output ('Packaged ' + $taskFiles.Count + ' files; user settings excluded: ' + $taskArchive)

@@ -1,12 +1,12 @@
 # Squad Tools · 射击计算与服务器列表
 
-面向游戏 **Squad / 战术小队** 的中文 Windows x64 桌面软件（0.4.0 预览版）。射击计算器内置离线地图、地形高程和 9 种工事/载具武器；服务器页面支持按需联网查询、核对人数及收藏。点击服务器后自动切换射击地图，并可跟随服务器换图。
+面向游戏 **Squad / 战术小队** 的中文 Windows x64 桌面软件（0.4.1 预览版）。射击计算器内置离线地图、地形高程和 9 种工事/载具武器；服务器页面支持按需联网查询、核对人数及收藏。点击服务器后自动切换射击地图，并可跟随服务器换图。
 
 ## 直接使用
 
-双击 `dist/SquadTools.exe`，或解压 `SquadTools-portable.zip` 后运行其中的 `SquadTools.exe`。需要 Windows x64 和 .NET Framework 4.8。本轮没有安装系统软件；项目内增加了已校验的 Steamworks.NET 组件，用于实验性加入入口。
+双击 `dist/SquadTools.exe`，或解压 `SquadTools-portable.zip` 后运行其中的 `SquadTools.exe`。需要 Windows x64 和 .NET Framework 4.8；没有新增系统软件或运行环境要求。
 
-如果移动软件，请复制整个 `dist` 文件夹到可写目录，保留 EXE 旁的 **`maps` 文件夹、`Steamworks.NET.dll` 和 `steam_api64.dll`**，以及 `README.md`、`LICENSE` 和 `third_party`。完整便携包中的地图选择、图片显示和高差计算均可离线使用。
+如果移动软件，请复制整个 `dist` 文件夹到可写目录，保留 EXE 旁的 **`maps` 文件夹**，以及 `README.md`、`LICENSE` 和 `third_party`。完整便携包中的地图选择、图片显示和高差计算均可离线使用。
 
 软件关闭时把坐标、高度、选中地图、高程模式和自定义地图边长存到软件旁的 `data/settings.xml`；导入图片存为 `data/custom-map.png`。不会修改系统设置、注册表、启动项或游戏文件。
 
@@ -19,7 +19,6 @@
 - 分别展示服务器上报人数、EOS 登记人数、可见成员计数、普通与预留排队人数。失败或无法核验显示未知，不改成 0 人。
 - 默认折叠相同公网连接地址和游戏端口的记录，可取消折叠查看。占位地址、内网地址、同 IP 不同端口不会因此误合并；折叠不代表已确认哪条是原服。
 - 默认在刷新后核验当前筛选结果中人数最多的前 10 台，也可单独核验所选服务器。连续显著差异会提示；“隐藏持续人数差异”需要自行勾选，规则仍需更多现场样本校准。
-- “加入（实验性）”通过 Steam 大厅入口尝试连接，需要 Steam 已启动且账号拥有 Squad。已实现入口与失败提示，**尚未验证当前游戏内成功进入目标服务器**；发起请求不代表进服成功。
 
 2026-10-25 已使用正式程序验证 EOS 列表查询及前 10 台可见成员查询；该结果不等于验证了所有服务器真实人数，也不等于识别了所有阴兵或冒牌服务器。实现、验证范围与限制详见 [docs/SERVER_BROWSER.md](docs/SERVER_BROWSER.md)。
 
@@ -114,6 +113,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Test
 
 SquadCalc 使用自定义 **MIT License (Non-Commercial)**，仅限非商业用途，并要求保留署名与许可。原文随附于 `third_party/SquadCalc.LICENSE`，本项目按该非商业范围提供。
 
-EOS 协议参考 [GameDig](https://github.com/gamedig/node-gamedig)（MIT，许可随附于 `third_party/GameDig.LICENSE`）。Steam 加入组件为 [Steamworks.NET](https://github.com/rlabrecque/Steamworks.NET)，来源、版本和校验值见 `third_party/Steamworks.NET/SOURCE.md`。社区加入协议资料仅作为参考；没有复制缺少明确许可的示例源码。
+EOS 协议参考 [GameDig](https://github.com/gamedig/node-gamedig)（MIT，许可随附于 `third_party/GameDig.LICENSE`）。0.4.1 已按用户要求移除 Steam 加入功能及其第三方组件，服务器查询和地图同步不要求 Steam 运行。
 
 便携包包含为本地使用单独取得的游戏地图底图与高程素材；Git 仓库不跟踪这些图片文件。游戏素材权利归 Offworld Industries 等各自权利人所有，代码许可不授予这些素材的使用或分发权；重新发布软件或素材时应独立核实相应授权。来源和格式详见随附的 `maps/README.md`（源码中为 `assets/maps/README.md`）。

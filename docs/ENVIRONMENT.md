@@ -2,7 +2,7 @@
 
 检查日期：2026-10-22。只读检查，本轮未安装软件、运行时、SDK、依赖或第三方客户端。
 
-2026-10-25 服务器工具增量：继续使用现有 .NET Framework 4.8 / C# 5，正式 EXE 改为 x64；增加 Framework 自带的 System.Net.Http / System.Web.Extensions 引用。项目内附带经 SHA-256 校验的 Steamworks.NET 2025.164.1 Windows x64 组件；未安装系统运行时或 SDK。迫击炮仍离线运行，服务器页面按需访问 EOS。下述“首版不依赖远端 API”等说明仅对应迫击炮基线，新增功能见 [SERVER_BROWSER.md](SERVER_BROWSER.md)。
+2026-10-25 服务器工具增量：继续使用现有 .NET Framework 4.8 / C# 5，正式 EXE 改为 x64；增加 Framework 自带的 System.Net.Http / System.Web.Extensions 引用。0.4.1 已移除 Steam 加入功能及 Steamworks.NET 组件；未安装系统运行时或 SDK。射击计算可离线运行，服务器页面及地图跟随按需访问 EOS。下述“首版不依赖远端 API”等说明仅对应迫击炮基线，新增功能见 [SERVER_BROWSER.md](SERVER_BROWSER.md)。
 
 ## 当前方案无需补装
 

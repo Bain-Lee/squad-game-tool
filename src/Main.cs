@@ -502,7 +502,7 @@ namespace SquadTools
                 "4. 左上角选择工事或载具、具体武器及弹药。程序使用各自初速、重力和仰角限制，按武器显示密位、度数或度分。方位 0° 为北、90° 为东；NATO 密位采用 6400/圈。飞行时间为理论估算。\n\n" +
                 "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
                 "贝拉亚为暂退役的旧版地图，仅提供底图和手动高差。本版不判断地形遮挡，不含 OCR 或游戏读取，命中精度尚未经游戏实测。\n\n" +
-                "服务器列表：点击服务器行或按 Enter 即同步射击地图，并每 60 秒跟随换图。可在射击页停止跟随；手动换图也会停止。未知地图保留当前底图。上报人数、EOS 登记与可见成员口径不同；持续差异提示不等于已证实阴兵。加入按钮为实验性，需 Steam 和 Squad。\n\n" +
+                "服务器列表：点击服务器行或按 Enter 即同步射击地图，并每 60 秒跟随换图。可在射击页停止跟随；手动换图也会停止。未知地图保留当前底图。上报人数、EOS 登记与可见成员口径不同；持续差异提示不等于已证实阴兵。\n\n" +
                 "算法及游戏参数参考 sh4rkman/SquadCalc（非商业许可）。地图素材归各自权利人。详见随附说明与 third_party。",
                 "使用说明 · 游戏 Squad 专用");
         }
@@ -690,7 +690,7 @@ namespace SquadTools
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  0.4.0 预览版' Foreground='#607B8E' FontSize='10'/><TextBlock Text='迫击炮离线可用 · 服务器按需联网' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
+  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  0.4.1 预览版' Foreground='#607B8E' FontSize='10'/><TextBlock Text='迫击炮离线可用 · 服务器按需联网' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
 </Grid>";
     }
 
@@ -701,11 +701,6 @@ namespace SquadTools
         {
             try
             {
-                if (args.Length == 3 && args[0] == "--join-server") {
-                    // A GUI subsystem process has no console code page to change; write UTF-8 to the redirected pipe directly.
-                    Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
-                    return SteamJoinBridge.Run(args[1], args[2]);
-                }
                 if (args.Length == 2 && args[0] == "--probe-servers") return ServerDiagnostics.Probe(args[1]);
                 bool serverSmoke = args.Length >= 2 && args[0] == "--server-smoke-test";
                 var application = new Application(); var window = new MainWindow(serverSmoke || (args.Length == 2 && args[0] == "--smoke-test"));
@@ -721,7 +716,6 @@ namespace SquadTools
                 application.Run(window); return Environment.ExitCode;
             }
             catch (Exception ex) {
-                if (args.Length > 0 && args[0] == "--join-server") { try { Console.WriteLine("SQUADTOOLS_JOIN:ERROR:加入组件无法启动，请检查软件文件是否齐全。"); } catch (Exception) { } return 1; }
                 MessageBox.Show("软件启动失败：" + ex.Message, "Squad Tools"); return 1;
             }
         }

@@ -35,8 +35,8 @@ internal static class ServerBrowserTests
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
         dispatcher.BeginInvoke(new Action(async delegate {
             try {
-                await TestEvidenceAndSorting(); await TestReentryAndDispose(); await TestFavorites(); await TestJoinLifecycle(); await TestBackgroundFollow();
-                Console.WriteLine("PASS: " + assertions + " WPF browser regression assertions (real refresh/filter paths, cancellation, expiry, sorting, favorites and join state). Mock HTTP and join launcher only.");
+                await TestEvidenceAndSorting(); await TestReentryAndDispose(); await TestFavorites(); await TestBackgroundFollow();
+                Console.WriteLine("PASS: " + assertions + " WPF browser regression assertions (real refresh/filter paths, cancellation, expiry, sorting, favorites and map follow). Mock HTTP only.");
             } catch (Exception ex) { Console.Error.WriteLine(ex); exitCode = 1; }
             finally { dispatcher.BeginInvokeShutdown(DispatcherPriority.Background); }
         }));
@@ -51,22 +51,15 @@ internal static class ServerBrowserTests
         public readonly string DirectoryPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "browser-test-" + Guid.NewGuid().ToString("N"));
         public readonly ServerBrowserView View;
         public readonly string FavoritesFile;
-        public int JoinCalls;
-        public TaskCompletionSource<string> PendingJoin;
-        public CancellationToken JoinCancellation;
         public Harness(string savedFavorites)
         {
             Directory.CreateDirectory(DirectoryPath); FavoritesFile = Path.Combine(DirectoryPath, "favorites.xml");
             if (savedFavorites != null) File.WriteAllText(FavoritesFile, savedFavorites);
-            View = new ServerBrowserView(false, new EosClient(Http), FavoritesFile, () => Now, (server, build, token) => {
-                JoinCalls++; JoinCancellation = token;
-                return PendingJoin == null ? Task.FromResult("LAUNCHED") : PendingJoin.Task;
-            });
+            View = new ServerBrowserView(false, new EosClient(Http), FavoritesFile, () => Now);
         }
         public DataGrid Table { get { return Field<DataGrid>(View, "table"); } }
         public ServerRecord First { get { return Field<ServerSnapshot>(View, "snapshot").Servers.First(s => s.SessionId == A); } }
         public Task Pulse() { return (Task)Call(View, "Pulse"); }
-        public Task Join() { return (Task)Call(View, "JoinSelected"); }
         public void Dispose()
         {
             View.Dispose();
@@ -174,35 +167,6 @@ internal static class ServerBrowserTests
             Call(h.View,"ToggleFavorite");
             Check(!h.First.Favorite && !File.ReadAllText(h.FavoritesFile).Contains("203.0.113.5:7787"), "existing favorite file replaced atomically");
             Check(Directory.GetFiles(h.DirectoryPath,"*.tmp").Length == 0, "no temporary favorite files remain");
-        }
-    }
-
-    private static async Task TestJoinLifecycle()
-    {
-        using (var h = new Harness(null)) {
-            await h.View.Refresh(); h.PendingJoin = new TaskCompletionSource<string>(); var join = h.Join();
-            Check(h.JoinCalls == 1 && !Field<Button>(h.View,"join").IsEnabled, "pending join disables button");
-            await h.Join(); Check(h.JoinCalls == 1, "duplicate join is guarded inside action");
-            h.Now = h.Now.AddSeconds(15); h.PendingJoin.SetResult("LAUNCHED"); await join;
-            h.Now = h.Now.AddSeconds(76); Set(h.View,"active",true); Set(h.View,"lastAttempt",h.Now); await h.Pulse();
-            Check(!Field<Button>(h.View,"join").IsEnabled, "cooldown starts after helper launch rather than click");
-            await h.Join(); Check(h.JoinCalls == 1, "action cannot bypass cooldown");
-            h.Now = h.Now.AddSeconds(14); await h.Pulse();
-            Check(Field<Button>(h.View,"join").IsEnabled, "cooldown expires automatically without refresh or selection change");
-        }
-        foreach (bool close in new[] { false, true }) {
-            using (var h = new Harness(null)) {
-                await h.View.Refresh(); h.PendingJoin = new TaskCompletionSource<string>(); var join = h.Join();
-                if (close) h.View.Dispose(); else h.View.SetActive(false);
-                Check(h.JoinCancellation.IsCancellationRequested, "page exit or window close cancels pending join");
-                h.PendingJoin.SetCanceled(); await join;
-                Check(!Field<bool>(h.View,"joining"), "cancelled join releases operation state");
-                if (!close) { h.PendingJoin = null; await h.Join(); Check(h.JoinCalls == 2, "cancelled preparation does not impose success cooldown"); }
-            }
-        }
-        using (var h = new Harness(null)) {
-            await h.View.Refresh(); h.PendingJoin = new TaskCompletionSource<string>(); var join = h.Join(); h.PendingJoin.SetResult("ERROR:测试失败"); await join;
-            Check(Field<TextBlock>(h.View,"status").Text == "测试失败" && Field<Button>(h.View,"join").IsEnabled, "helper error is shown and permits retry");
         }
     }
 

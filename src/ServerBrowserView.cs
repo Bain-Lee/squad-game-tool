@@ -18,7 +18,6 @@ namespace SquadTools
     {
         private readonly EosClient client;
         private readonly Func<DateTime> utcNow;
-        private readonly Func<ServerRecord, string, CancellationToken, Task<string>> launchJoin;
         private readonly CountEvidence evidence = new CountEvidence();
         private readonly HashSet<string> favorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly bool testMode;
@@ -28,33 +27,33 @@ namespace SquadTools
         private readonly ComboBox kind;
         private readonly CheckBox favoritesOnly, populated, fold, hideMismatch, autoCheck;
         private readonly TextBlock summary, status, detail;
-        private readonly Button refresh, check, favorite, join, cancel;
+        private readonly Button refresh, check, favorite, cancel;
         private readonly DispatcherTimer timer;
-        private CancellationTokenSource operation, joinOperation;
-        private bool active, busy, joining, disposed, refreshPending, favoritesReadable = true;
-        private DateTime lastAttempt, lastJoin;
+        private CancellationTokenSource operation;
+        private bool active, busy, disposed, refreshPending, favoritesReadable = true;
+        private DateTime lastAttempt;
         private ServerSnapshot snapshot = new ServerSnapshot();
         private string followedSession;
         public event Action<ServerRecord> ServerChosen;
         public event Action<ServerRecord> FollowedServerUpdated;
         public bool HasRequestedNetwork { get; private set; }
-        public ServerBrowserView(bool testing) : this(testing, new EosClient(), Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "server-favorites.xml"), () => DateTime.UtcNow, SteamJoinBridge.Launch) { }
+        public ServerBrowserView(bool testing) : this(testing, new EosClient(), Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "server-favorites.xml"), () => DateTime.UtcNow) { }
 
-        internal ServerBrowserView(bool testing, EosClient eosClient, string favoritesFile, Func<DateTime> clock, Func<ServerRecord, string, CancellationToken, Task<string>> joinLauncher)
+        internal ServerBrowserView(bool testing, EosClient eosClient, string favoritesFile, Func<DateTime> clock)
         {
-            testMode = testing; client = eosClient; favoritePath = favoritesFile; utcNow = clock; launchJoin = joinLauncher;
+            testMode = testing; client = eosClient; favoritePath = favoritesFile; utcNow = clock;
             Child = (UIElement)XamlReader.Parse(Layout);
             var root = (FrameworkElement)Child;
             table = (DataGrid)root.FindName("Servers"); search = (TextBox)root.FindName("Search"); kind = (ComboBox)root.FindName("Kind");
             favoritesOnly = (CheckBox)root.FindName("FavoritesOnly"); populated = (CheckBox)root.FindName("Populated"); fold = (CheckBox)root.FindName("Fold"); hideMismatch = (CheckBox)root.FindName("HideMismatch"); autoCheck = (CheckBox)root.FindName("AutoCheck");
             summary = (TextBlock)root.FindName("Summary"); status = (TextBlock)root.FindName("Status"); detail = (TextBlock)root.FindName("Detail");
-            refresh = (Button)root.FindName("Refresh"); check = (Button)root.FindName("Check"); favorite = (Button)root.FindName("Favorite"); join = (Button)root.FindName("Join"); cancel = (Button)root.FindName("Cancel");
+            refresh = (Button)root.FindName("Refresh"); check = (Button)root.FindName("Check"); favorite = (Button)root.FindName("Favorite"); cancel = (Button)root.FindName("Cancel");
             kind.ItemsSource = new[] { "全部", "许可服", "自定义", "Fireteam" }; kind.SelectedIndex = 0;
             search.TextChanged += delegate { ApplyFilter(); }; kind.SelectionChanged += delegate { ApplyFilter(); };
             foreach (var box in new[] { favoritesOnly, populated, fold, hideMismatch }) { box.Checked += delegate { ApplyFilter(); }; box.Unchecked += delegate { ApplyFilter(); }; }
             refresh.Click += async delegate { await Refresh(); };
             check.Click += async delegate { await CheckSelected(); };
-            cancel.Click += delegate { refreshPending = false; if (operation != null) operation.Cancel(); if (joinOperation != null) joinOperation.Cancel(); };
+            cancel.Click += delegate { refreshPending = false; if (operation != null) operation.Cancel(); };
             table.SelectionChanged += delegate { ShowDetail(); };
             table.AddHandler(Mouse.MouseUpEvent, new MouseButtonEventHandler(delegate(object sender, MouseButtonEventArgs e) {
                 if (e.ChangedButton == MouseButton.Left && ItemsControl.ContainerFromElement(table, e.OriginalSource as DependencyObject) is DataGridRow) ChooseSelected();
@@ -66,7 +65,6 @@ namespace SquadTools
                 if (Math.Abs(table.Columns[1].ActualWidth - width) > 1) table.Columns[1].Width = new DataGridLength(width);
             };
             favorite.Click += delegate { ToggleFavorite(); };
-            join.Click += async delegate { await JoinSelected(); };
             timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             timer.Tick += async delegate { await Pulse(); };
             if (!testMode) LoadFavorites();
@@ -77,7 +75,7 @@ namespace SquadTools
         {
             if (disposed) return;
             active = value;
-            if (!value) { if (followedSession == null) timer.Stop(); if (operation != null) operation.Cancel(); if (joinOperation != null) joinOperation.Cancel(); return; }
+            if (!value) { if (followedSession == null) timer.Stop(); if (operation != null) operation.Cancel(); return; }
             ApplyFilter();
             if (!testMode) {
                 timer.Start();
@@ -107,12 +105,12 @@ namespace SquadTools
             if (ExpireEvidence()) ApplyFilter();
             UpdateButtons();
             var elapsed = utcNow() - lastAttempt;
-            if (!busy && !joining && (elapsed >= TimeSpan.FromSeconds(60) || refreshPending && elapsed >= TimeSpan.FromSeconds(10))) await Refresh();
+            if (!busy && (elapsed >= TimeSpan.FromSeconds(60) || refreshPending && elapsed >= TimeSpan.FromSeconds(10))) await Refresh();
         }
 
         public async Task Refresh()
         {
-            if (busy || joining || disposed || testMode) return;
+            if (busy || disposed || testMode) return;
             if (utcNow() - lastAttempt < TimeSpan.FromSeconds(10)) { status.Text = "刚刚查询过，请稍等几秒再刷新。"; return; }
             refreshPending = false; lastAttempt = utcNow(); Begin();
             try
@@ -159,7 +157,7 @@ namespace SquadTools
         private async Task CheckSelected()
         {
             var selected = table.SelectedItem as ServerRecord;
-            if (busy || joining || selected == null || testMode || disposed) return;
+            if (busy || selected == null || testMode || disposed) return;
             if (utcNow() - selected.ObservedAt < TimeSpan.FromSeconds(20)) { status.Text = "刚刚核验过这台服务器，请至少间隔 20 秒再核验。"; return; }
             if (utcNow() - selected.RetrievedAt > TimeSpan.FromMinutes(2)) { status.Text = "列表较旧，请先刷新再核验人数。"; return; }
             Begin();
@@ -209,18 +207,16 @@ namespace SquadTools
                 "\n上报 " + ServerRecord.Value(server.Reported) + " 人 / EOS 登记 " + ServerRecord.Value(server.Registered) + " 人 / 可见成员 " + ServerRecord.Value(server.Observed) + " 人。公开容量 " + ServerRecord.Value(server.Capacity) + "；排队：普通 " + ServerRecord.Value(server.Queue) + "，预留 " + ServerRecord.Value(server.ReservedQueue) + "。" +
                 "\n" + (server.ObservedAt == DateTime.MinValue ? "此服务器尚未核验。" : "最近核验 " + server.ObservedAt.ToLocalTime().ToString("HH:mm:ss") + " · " + server.CheckState + "。") +
                 (server.DuplicateCount > 1 ? " 有 " + server.DuplicateCount + " 条记录指向相同连接入口，可取消折叠查看；尚不能确认原服身份。" : "") +
-                "\n点击服务器行或按 Enter 将射击地图同步到该服务器。可见成员可能缺失或滞后；加入功能为实验性，尚未完成游戏内验收。";
+                "\n点击服务器行或按 Enter 将射击地图同步到该服务器。可见成员可能缺失或滞后，不能证明真人在线。";
             UpdateButtons();
         }
 
         private void UpdateButtons()
         {
             var selected = table.SelectedItem as ServerRecord;
-            refresh.IsEnabled = !busy && !joining; cancel.IsEnabled = busy || joining; check.IsEnabled = !busy && !joining && selected != null;
-            cancel.Content = joining ? "取消加入" : "取消查询";
+            refresh.IsEnabled = !busy; cancel.IsEnabled = busy; check.IsEnabled = !busy && selected != null;
             favorite.IsEnabled = selected != null && favoritesReadable; favorite.Content = selected != null && selected.Favorite ? "取消收藏" : "收藏服务器";
             favorite.ToolTip = favoritesReadable ? null : "收藏文件无法读取，已暂停写入以保留原文件；修复文件后重启可恢复。";
-            join.IsEnabled = selected != null && !busy && !joining && utcNow() - lastJoin >= TimeSpan.FromSeconds(90);
         }
 
         private void LoadFavorites()
@@ -247,29 +243,13 @@ namespace SquadTools
             finally { if (temp != null) { try { if (File.Exists(temp)) File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { } } }
         }
 
-        private async Task JoinSelected()
-        {
-            var server = table.SelectedItem as ServerRecord; if (server == null || busy || joining || testMode || disposed || utcNow() - lastJoin < TimeSpan.FromSeconds(90)) return;
-            if (utcNow() - server.RetrievedAt > TimeSpan.FromMinutes(2)) { status.Text = "列表较旧，请刷新后再加入。"; return; }
-            string build = SteamJoinBridge.BuildId(server.Version);
-            if (build == null) { status.Text = "未识别此服务器的游戏版本，暂不能生成加入入口。"; return; }
-            joining = true; joinOperation = new CancellationTokenSource(); UpdateButtons(); status.Text = "正在准备 Steam 加入入口…";
-            try {
-                string result = await launchJoin(server, build, joinOperation.Token);
-                if (result == "LAUNCHED") lastJoin = utcNow();
-                if (!disposed) status.Text = result == "LAUNCHED" ? "已向 Steam 发起加入，请查看游戏。入口保留 90 秒；这不代表已成功进服。" : result != null && result.StartsWith("ERROR:") ? result.Substring(6) : "加入入口未能启动，请确认 Steam 已运行。";
-            } catch (OperationCanceledException) { if (!disposed) status.Text = "加入准备已取消。"; }
-            catch (Exception) { if (!disposed) status.Text = "加入入口启动失败，请确认 Steam 已安装并运行。"; }
-            finally { joining = false; joinOperation.Dispose(); joinOperation = null; if (!disposed) UpdateButtons(); }
-        }
-
         public void LoadSmokeSnapshot(ServerSnapshot sample)
         {
             if (!testMode) throw new InvalidOperationException("Test-only path.");
             snapshot = sample; ApplyFilter();
             if (sample.Servers.Count == 0 || table.Items.Count == 0) throw new InvalidOperationException("Server table is empty.");
             var first = (ServerRecord)table.Items[0]; search.Text = "no_match_" + Guid.NewGuid().ToString("N");
-            if (table.Items.Count != 0 || join.IsEnabled) throw new InvalidOperationException("Search/empty state failed.");
+            if (table.Items.Count != 0 || check.IsEnabled || favorite.IsEnabled) throw new InvalidOperationException("Search/empty state failed.");
             search.Text = ""; kind.SelectedItem = "全部"; populated.IsChecked = false;
             ToggleFavorite(); favoritesOnly.IsChecked = true;
             if (table.Items.Count == 0) throw new InvalidOperationException("Favorite filter failed.");
@@ -279,7 +259,7 @@ namespace SquadTools
             status.Text = "验证预览 · " + (sample.RetrievedAt == DateTime.MinValue ? "离线测试数据" : "已取得的数据快照，非实时刷新");
         }
 
-        public void Dispose() { if (disposed) return; disposed = true; timer.Stop(); if (operation != null) operation.Cancel(); if (joinOperation != null) joinOperation.Cancel(); if (!busy) client.Dispose(); }
+        public void Dispose() { if (disposed) return; disposed = true; timer.Stop(); if (operation != null) operation.Cancel(); if (!busy) client.Dispose(); }
 
         private const string Layout = @"
 <Grid xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
@@ -296,7 +276,7 @@ namespace SquadTools
  <DataGrid x:Name='Servers' Grid.Row='3' AutoGenerateColumns='False' IsReadOnly='True' CanUserAddRows='False' CanUserDeleteRows='False' CanUserReorderColumns='False' EnableRowVirtualization='True' EnableColumnVirtualization='True' SelectionMode='Single' SelectionUnit='FullRow' HeadersVisibility='Column' GridLinesVisibility='Horizontal' HorizontalGridLinesBrush='#243541' BorderBrush='#283B49' Background='#101B24' RowHeaderWidth='0' FontSize='11' ScrollViewer.CanContentScroll='True'>
   <DataGrid.Columns><DataGridTextColumn Header='★' Binding='{Binding FavoriteText}' Width='32'/><DataGridTextColumn Header='服务器' Binding='{Binding Name}' Width='*' MinWidth='220'/><DataGridTextColumn Header='地图' Binding='{Binding Map}' Width='160'/><DataGridTextColumn Header='上报人数' Binding='{Binding PlayersText}' SortMemberPath='Reported' Width='90'/><DataGridTextColumn Header='EOS登记' Binding='{Binding RegisteredText}' SortMemberPath='Registered' Width='72'/><DataGridTextColumn Header='可见成员' Binding='{Binding ObservedText}' SortMemberPath='Observed' Width='72'/><DataGridTextColumn Header='排队 / 预留' Binding='{Binding QueueText}' Width='83'/><DataGridTextColumn Header='核验状态' Binding='{Binding StatusText}' Width='172'/></DataGrid.Columns>
  </DataGrid>
- <Border Grid.Row='4' Background='#14212C' BorderBrush='#283B49' BorderThickness='1' CornerRadius='6' Padding='14' Margin='0,12,0,0'><Grid><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='146'/></Grid.ColumnDefinitions><ScrollViewer VerticalScrollBarVisibility='Auto'><TextBlock x:Name='Detail' TextWrapping='Wrap' FontSize='11' LineHeight='22' Foreground='#AFC1CC' Margin='0,0,12,0'/></ScrollViewer><StackPanel Grid.Column='1'><Button x:Name='Join' Content='加入（实验性）' Background='#B8EB7E' Foreground='#16251B' Margin='0,0,0,8'/><Button x:Name='Check' Content='核验所选人数' Margin='0,0,0,8'/><Button x:Name='Favorite' Content='收藏服务器'/></StackPanel></Grid></Border>
+ <Border Grid.Row='4' Background='#14212C' BorderBrush='#283B49' BorderThickness='1' CornerRadius='6' Padding='14' Margin='0,12,0,0'><Grid><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='146'/></Grid.ColumnDefinitions><ScrollViewer VerticalScrollBarVisibility='Auto'><TextBlock x:Name='Detail' TextWrapping='Wrap' FontSize='11' LineHeight='22' Foreground='#AFC1CC' Margin='0,0,12,0'/></ScrollViewer><StackPanel Grid.Column='1'><Button x:Name='Check' Content='核验所选人数' Background='#B8EB7E' Foreground='#16251B' Margin='0,0,0,8'/><Button x:Name='Favorite' Content='收藏服务器'/></StackPanel></Grid></Border>
 </Grid>";
     }
 }
