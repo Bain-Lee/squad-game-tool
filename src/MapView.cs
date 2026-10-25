@@ -17,6 +17,7 @@ namespace SquadTools
         public bool HasMarkers;
         public BitmapSource MapImage;
         public bool PlaceWeapon;
+        public double RangeMeters = Ballistics.Velocity * Ballistics.Velocity / Ballistics.Gravity;
         public event Action<Vec2, bool> PointPlaced;
         private double zoom = 1;
         private Vector pan;
@@ -40,7 +41,7 @@ namespace SquadTools
         private readonly Dictionary<string, Pen> pens = new Dictionary<string, Pen>();
         private readonly Dictionary<string, FormattedText> texts = new Dictionary<string, FormattedText>();
         private bool sceneReady, hudReady;
-        private double drawnScale, drawnWidth, drawnHeight, drawnDpi, hudWidth, hudHeight, hudScale;
+        private double drawnScale, drawnWidth, drawnHeight, drawnDpi, hudWidth, hudHeight, hudScale, drawnRange;
         private BitmapSource drawnImage, hudImage;
         private Vec2 drawnWeapon, drawnTarget;
         private bool drawnMarkers, hudMarkers;
@@ -247,7 +248,7 @@ namespace SquadTools
             if (ActualWidth < 10 || ActualHeight < 10) return;
             double scale = Scale, dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
             bool rebuild = !sceneReady || drawnScale != scale || drawnWidth != WorldSize || drawnHeight != WorldHeight ||
-                drawnImage != MapImage || drawnMarkers != HasMarkers || drawnDpi != dpi ||
+                drawnImage != MapImage || drawnMarkers != HasMarkers || drawnDpi != dpi || drawnRange != RangeMeters ||
                 drawnWeapon.X != Weapon.X || drawnWeapon.Y != Weapon.Y || drawnTarget.X != Target.X || drawnTarget.Y != Target.Y;
             if (rebuild)
             {
@@ -256,7 +257,7 @@ namespace SquadTools
                 texts.Clear(); drawnDpi = dpi;
                 BuildScene(scale);
                 drawnScale = scale; drawnWidth = WorldSize; drawnHeight = WorldHeight; drawnImage = MapImage;
-                drawnMarkers = HasMarkers; drawnWeapon = Weapon; drawnTarget = Target; sceneReady = true;
+                drawnMarkers = HasMarkers; drawnWeapon = Weapon; drawnTarget = Target; drawnRange = RangeMeters; sceneReady = true;
             }
             Point origin = Origin;
             double width = WorldSize * scale, height = WorldHeight * scale;
@@ -285,7 +286,7 @@ namespace SquadTools
                 if (MapImage != null) dc.DrawImage(MapImage, bounds);
                 if (HasMarkers)
                 {
-                    double radius = Ballistics.Velocity * Ballistics.Velocity / Ballistics.Gravity * scale;
+                    double radius = RangeMeters * scale;
                     dc.DrawEllipse(Brush("#1CAEDE75"), null, Local(Weapon, scale), radius, radius);
                 }
                 int columns = (int)Math.Ceiling(WorldSize / 300), rows = (int)Math.Ceiling(WorldHeight / 300);
@@ -313,7 +314,7 @@ namespace SquadTools
             {
                 if (HasMarkers)
                 {
-                    double radius = Ballistics.Velocity * Ballistics.Velocity / Ballistics.Gravity * scale;
+                    double radius = RangeMeters * scale;
                     Point a = Local(Weapon, scale), b = Local(Target, scale);
                     dc.DrawEllipse(null, Line("#E619251B", 4.5), a, radius, radius);
                     dc.DrawEllipse(null, Line("#D4F58C", 2), a, radius, radius);

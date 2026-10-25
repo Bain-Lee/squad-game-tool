@@ -35,7 +35,7 @@ internal static class ServerBrowserTests
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
         dispatcher.BeginInvoke(new Action(async delegate {
             try {
-                await TestEvidenceAndSorting(); await TestReentryAndDispose(); await TestFavorites(); await TestJoinLifecycle();
+                await TestEvidenceAndSorting(); await TestReentryAndDispose(); await TestFavorites(); await TestJoinLifecycle(); await TestBackgroundFollow();
                 Console.WriteLine("PASS: " + assertions + " WPF browser regression assertions (real refresh/filter paths, cancellation, expiry, sorting, favorites and join state). Mock HTTP and join launcher only.");
             } catch (Exception ex) { Console.Error.WriteLine(ex); exitCode = 1; }
             finally { dispatcher.BeginInvokeShutdown(DispatcherPriority.Background); }
@@ -79,14 +79,15 @@ internal static class ServerBrowserTests
     {
         public int Queries, Reported = 100;
         public bool Fail, HoldNext, Disposed;
+        public string Map = "BlackCoast_RAAS_v1";
         public TaskCompletionSource<HttpResponseMessage> Pending;
         public CancellationToken PendingToken;
         public static HttpResponseMessage Json(string json) { return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Encoding.UTF8.GetBytes(json)) }; }
         public string Servers()
         {
             return ServerData.Serializer().Serialize(new { sessions = new[] {
-                new { id=A, attributes=new { SERVERNAME_s="Alpha", ADDRESS_s="203.0.113.5", GAMESERVER_PORT_l=7787, PLAYERCOUNT_l=Reported, GAMEVERSION_s="v10.6.3.694944.3212" } },
-                new { id=B, attributes=new { SERVERNAME_s="Bravo", ADDRESS_s="203.0.113.5", GAMESERVER_PORT_l=7788, PLAYERCOUNT_l=5, GAMEVERSION_s="v10.6.3.694944.3212" } }
+                new { id=A, attributes=new { SERVERNAME_s="Alpha", ADDRESS_s="203.0.113.5", GAMESERVER_PORT_l=7787, PLAYERCOUNT_l=Reported, GAMEVERSION_s="v10.6.3.694944.3212", MAPNAME_s=Map } },
+                new { id=B, attributes=new { SERVERNAME_s="Bravo", ADDRESS_s="203.0.113.5", GAMESERVER_PORT_l=7788, PLAYERCOUNT_l=5, GAMEVERSION_s="v10.6.3.694944.3212", MAPNAME_s="Narva_RAAS_v1" } }
             } });
         }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellation)
@@ -202,6 +203,25 @@ internal static class ServerBrowserTests
         using (var h = new Harness(null)) {
             await h.View.Refresh(); h.PendingJoin = new TaskCompletionSource<string>(); var join = h.Join(); h.PendingJoin.SetResult("ERROR:测试失败"); await join;
             Check(Field<TextBlock>(h.View,"status").Text == "测试失败" && Field<Button>(h.View,"join").IsEnabled, "helper error is shown and permits retry");
+        }
+    }
+
+    private static async Task TestBackgroundFollow()
+    {
+        using (var h = new Harness(null)) {
+            await h.View.Refresh();
+            int choices = 0, notifications = 0; ServerRecord updated = null;
+            h.View.ServerChosen += s => choices++;
+            h.View.FollowedServerUpdated += s => { notifications++; updated = s; };
+            h.View.FollowServer(A); h.View.SetActive(false); h.Http.Map = "Gorodok_RAAS_v1";
+            h.Now = h.Now.AddSeconds(60); await h.Pulse();
+            Check(h.Http.Queries == 2 && notifications == 1 && updated.SessionId == A && updated.Map == "Gorodok_RAAS_v1", "selected server continues map updates while shooting page is active");
+            Check(choices == 0, "refresh and automatic row selection never imply user choice");
+            Call(h.View,"ChooseSelected"); Check(choices == 1, "explicit row activation raises choice even for first preselected row");
+            h.View.FollowServer(new string('f',32)); h.Now = h.Now.AddSeconds(60); await h.Pulse();
+            Check(notifications == 2 && updated == null, "missing followed session does not fall back to another server");
+            h.View.FollowServer(null); h.Now = h.Now.AddSeconds(60); await h.Pulse();
+            Check(h.Http.Queries == 3, "stopping follow resumes offline shooting page");
         }
     }
 }

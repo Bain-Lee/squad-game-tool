@@ -12,7 +12,7 @@ New-Item -ItemType Directory -Path $taskOutput -Force | Out-Null
 $taskRefs = @('System.dll','System.Core.dll','System.Xml.dll','System.Xaml.dll','System.Net.Http.dll','System.Web.Extensions.dll') | ForEach-Object { '/reference:' + (Join-Path $taskFramework $_) }
 $taskRefs += @('PresentationCore.dll','PresentationFramework.dll','WindowsBase.dll') | ForEach-Object { '/reference:' + (Join-Path (Join-Path $taskFramework 'WPF') $_) }
 $taskRefs += '/reference:' + (Join-Path $taskRoot 'third_party\Steamworks.NET\Steamworks.NET.dll')
-$taskSources = @('src\Ballistics.cs','src\MapCatalog.cs','src\MapView.cs','src\Main.cs','src\ServerModels.cs','src\EosClient.cs','src\ServerBrowserView.cs','src\SteamJoinBridge.cs','src\ServerDiagnostics.cs') | ForEach-Object { Join-Path $taskRoot $_ }
+$taskSources = @('src\Ballistics.cs','src\WeaponCatalog.cs','src\MapCatalog.cs','src\MapView.cs','src\Main.cs','src\ServerModels.cs','src\EosClient.cs','src\ServerBrowserView.cs','src\SteamJoinBridge.cs','src\ServerDiagnostics.cs') | ForEach-Object { Join-Path $taskRoot $_ }
 $taskMapRoot = Join-Path $taskRoot 'assets\maps'
 if (-not (Test-Path -LiteralPath (Join-Path $taskMapRoot 'catalog.xml'))) { throw 'Map catalog missing. Run scripts\fetch-maps.ps1 with an existing Python/Pillow environment first.' }
 [xml]$taskMapCatalog = Get-Content -LiteralPath (Join-Path $taskMapRoot 'catalog.xml') -Raw -Encoding UTF8
@@ -33,15 +33,15 @@ Write-Output ('Built: ' + (Join-Path $taskOutput 'SquadTools.exe'))
 if ($Test) {
     $taskBuild = Join-Path $taskRoot 'build'
     New-Item -ItemType Directory -Path $taskBuild -Force | Out-Null
-    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'CoreTests.exe')) (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'tests\CoreTests.cs')
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'CoreTests.exe')) (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\WeaponCatalog.cs') (Join-Path $taskRoot 'tests\CoreTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     & (Join-Path $taskBuild 'CoreTests.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
-    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'MapTests.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\MapCatalog.cs') (Join-Path $taskRoot 'tests\MapTests.cs')
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'MapTests.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\WeaponCatalog.cs') (Join-Path $taskRoot 'src\MapCatalog.cs') (Join-Path $taskRoot 'tests\MapTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Map test compilation failed.' }
     & (Join-Path $taskBuild 'MapTests.exe') (Join-Path $taskOutput 'maps')
     if ($LASTEXITCODE -ne 0) { throw 'Map tests failed.' }
-    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'MapRenderTests.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'tests\MapRenderTests.cs')
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'MapRenderTests.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\WeaponCatalog.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'tests\MapRenderTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Map render test compilation failed.' }
     & (Join-Path $taskBuild 'MapRenderTests.exe') (Join-Path $taskMapRoot 'images\blackcoast.jpg') (Join-Path $taskBuild 'map-render-preview.png')
     if ($LASTEXITCODE -ne 0) { throw 'Map render tests failed.' }
@@ -60,6 +60,10 @@ if ($Test) {
     $taskServerSmoke = Start-Process -FilePath (Join-Path $taskOutput 'SquadTools.exe') -ArgumentList @('--server-smoke-test', ('"' + (Join-Path $taskBuild 'server-preview.png') + '"')) -WindowStyle Hidden -Wait -PassThru
     if ($taskServerSmoke.ExitCode -ne 0) { throw 'Server desktop smoke test failed. See build\server-preview.txt.' }
     Get-Content -LiteralPath (Join-Path $taskBuild 'server-preview.txt')
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /platform:x64 /main:WeaponAndSyncTests /codepage:65001 ('/out:' + (Join-Path $taskBuild 'WeaponAndSyncTests.exe')) $taskRefs $taskSources (Join-Path $taskRoot 'tests\WeaponAndSyncTests.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Weapon/map sync test compilation failed.' }
+    & (Join-Path $taskBuild 'WeaponAndSyncTests.exe') (Join-Path $taskOutput 'maps') (Join-Path $taskBuild 'weapon-sync-preview.png')
+    if ($LASTEXITCODE -ne 0) { throw 'Weapon/map sync tests failed.' }
     $taskJoinStart = New-Object Diagnostics.ProcessStartInfo
     $taskJoinStart.FileName = Join-Path $taskOutput 'SquadTools.exe'
     $taskJoinStart.Arguments = '--join-server invalid bad'
@@ -79,7 +83,7 @@ if ($Test) {
 if ($Benchmark) {
     $taskBuild = Join-Path $taskRoot 'build'
     New-Item -ItemType Directory -Path $taskBuild -Force | Out-Null
-    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'RenderBenchmark.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'tests\RenderBenchmark.cs')
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'RenderBenchmark.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\WeaponCatalog.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'tests\RenderBenchmark.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Render benchmark compilation failed.' }
     $taskMeasurements = & (Join-Path $taskBuild 'RenderBenchmark.exe') (Join-Path $taskMapRoot 'images\blackcoast.jpg')
     if ($LASTEXITCODE -ne 0) { throw 'Render benchmark failed.' }

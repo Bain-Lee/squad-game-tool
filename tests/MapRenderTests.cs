@@ -83,6 +83,8 @@ internal static class MapRenderTests
         builds = view.SceneBuildCount;
         view.Weapon = new Vec2(2150.245, 2200.875); Update(view); Check(view.SceneBuildCount == builds + 1, "marker coordinate change redraws immediately");
         builds = view.SceneBuildCount;
+        view.RangeMeters = 2000; Update(view); Check(view.SceneBuildCount == builds + 1, "changing weapon range redraws retained map layers");
+        builds = view.SceneBuildCount;
         view.HasMarkers = false; Update(view); Check(view.SceneBuildCount == builds + 1 && (overlay.Drawing == null || overlay.Drawing.Children.Count == 0), "marker reset clears overlay");
         view.HasMarkers = true; Update(view);
         builds = view.SceneBuildCount; Layout(view, 860, 620); Check(view.SceneBuildCount == builds + 1, "resize rebuilds at new scale");

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Markup;
+using System.Windows.Input;
 using System.Windows.Threading;
 using System.Xml;
 
@@ -33,6 +34,9 @@ namespace SquadTools
         private bool active, busy, joining, disposed, refreshPending, favoritesReadable = true;
         private DateTime lastAttempt, lastJoin;
         private ServerSnapshot snapshot = new ServerSnapshot();
+        private string followedSession;
+        public event Action<ServerRecord> ServerChosen;
+        public event Action<ServerRecord> FollowedServerUpdated;
         public bool HasRequestedNetwork { get; private set; }
         public ServerBrowserView(bool testing) : this(testing, new EosClient(), Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "server-favorites.xml"), () => DateTime.UtcNow, SteamJoinBridge.Launch) { }
 
@@ -52,6 +56,10 @@ namespace SquadTools
             check.Click += async delegate { await CheckSelected(); };
             cancel.Click += delegate { refreshPending = false; if (operation != null) operation.Cancel(); if (joinOperation != null) joinOperation.Cancel(); };
             table.SelectionChanged += delegate { ShowDetail(); };
+            table.AddHandler(Mouse.MouseUpEvent, new MouseButtonEventHandler(delegate(object sender, MouseButtonEventArgs e) {
+                if (e.ChangedButton == MouseButton.Left && ItemsControl.ContainerFromElement(table, e.OriginalSource as DependencyObject) is DataGridRow) ChooseSelected();
+            }), true);
+            table.PreviewKeyDown += delegate(object sender, KeyEventArgs e) { if (e.Key == Key.Enter) { ChooseSelected(); e.Handled = true; } };
             table.SizeChanged += delegate {
                 double others = table.Columns.Where((column, index) => index != 1).Sum(column => column.Width.IsAbsolute ? column.Width.Value : column.ActualWidth);
                 double width = Math.Max(220, table.ActualWidth - others - 20);
@@ -69,7 +77,7 @@ namespace SquadTools
         {
             if (disposed) return;
             active = value;
-            if (!value) { timer.Stop(); if (operation != null) operation.Cancel(); if (joinOperation != null) joinOperation.Cancel(); return; }
+            if (!value) { if (followedSession == null) timer.Stop(); if (operation != null) operation.Cancel(); if (joinOperation != null) joinOperation.Cancel(); return; }
             ApplyFilter();
             if (!testMode) {
                 timer.Start();
@@ -78,9 +86,24 @@ namespace SquadTools
             }
         }
 
+        private void ChooseSelected()
+        {
+            var selected = table.SelectedItem as ServerRecord;
+            if (!disposed && selected != null && ServerChosen != null) ServerChosen(selected);
+        }
+
+        public void FollowServer(string sessionId)
+        {
+            followedSession = sessionId;
+            if (!testMode && !disposed && (active || followedSession != null)) timer.Start();
+            else if (!active) { timer.Stop(); if (operation != null) operation.Cancel(); }
+        }
+
+        public void ShowMapSyncMessage(string message) { status.Text = message; }
+
         private async Task Pulse()
         {
-            if (disposed || !active || testMode) return;
+            if (disposed || !active && followedSession == null || testMode) return;
             if (ExpireEvidence()) ApplyFilter();
             UpdateButtons();
             var elapsed = utcNow() - lastAttempt;
@@ -107,7 +130,8 @@ namespace SquadTools
                 }
                 snapshot = next; evidence.Prune(next.Servers.Select(s => s.SessionId)); ApplyFilter();
                 status.Text = "列表已更新。人数来自不同口径，核验结果不等同于真人活跃人数。";
-                if (autoCheck.IsChecked == true) {
+                if (followedSession != null && FollowedServerUpdated != null) FollowedServerUpdated(snapshot.Servers.Find(s => s.SessionId == followedSession));
+                if ((active || followedSession == null) && autoCheck.IsChecked == true) {
                     var candidates = ServerData.Filter(snapshot.Servers, search.Text, (string)kind.SelectedItem, favoritesOnly.IsChecked == true, populated.IsChecked == true, fold.IsChecked == true, false)
                         .Where(s => s.Reported.GetValueOrDefault() > 0).Take(10).ToList();
                     await Verify(candidates, operation.Token);
@@ -185,7 +209,7 @@ namespace SquadTools
                 "\n上报 " + ServerRecord.Value(server.Reported) + " 人 / EOS 登记 " + ServerRecord.Value(server.Registered) + " 人 / 可见成员 " + ServerRecord.Value(server.Observed) + " 人。公开容量 " + ServerRecord.Value(server.Capacity) + "；排队：普通 " + ServerRecord.Value(server.Queue) + "，预留 " + ServerRecord.Value(server.ReservedQueue) + "。" +
                 "\n" + (server.ObservedAt == DateTime.MinValue ? "此服务器尚未核验。" : "最近核验 " + server.ObservedAt.ToLocalTime().ToString("HH:mm:ss") + " · " + server.CheckState + "。") +
                 (server.DuplicateCount > 1 ? " 有 " + server.DuplicateCount + " 条记录指向相同连接入口，可取消折叠查看；尚不能确认原服身份。" : "") +
-                "\n可见成员是公开在线状态的计数，可能缺失或滞后，不能证明真人在线。加入功能为实验性，需 Steam 和 Squad，尚未完成游戏内验收。";
+                "\n点击服务器行或按 Enter 将射击地图同步到该服务器。可见成员可能缺失或滞后；加入功能为实验性，尚未完成游戏内验收。";
             UpdateButtons();
         }
 
@@ -266,7 +290,7 @@ namespace SquadTools
   <Style TargetType='DataGridCell'><Setter Property='BorderThickness' Value='0'/><Setter Property='Padding' Value='7,5'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='DataGridCell'><Border Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}'><ContentPresenter VerticalAlignment='Center'/></Border></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property='IsSelected' Value='True'><Setter Property='Background' Value='#304D41'/><Setter Property='Foreground' Value='#FFFFFF'/></Trigger></Style.Triggers></Style>
  </Grid.Resources>
  <Grid.RowDefinitions><RowDefinition Height='64'/><RowDefinition Height='82'/><RowDefinition Height='51'/><RowDefinition Height='*'/><RowDefinition Height='170'/></Grid.RowDefinitions>
- <DockPanel LastChildFill='False'><StackPanel DockPanel.Dock='Left'><TextBlock Text='服务器列表' FontSize='27' FontWeight='SemiBold'/><TextBlock Text='查找服务器，核对人数，选择你的下一场战斗。' Foreground='#8298A8' FontSize='12' Margin='0,7,0,0'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='Cancel' Content='取消查询' Margin='0,0,10,0'/><Button x:Name='Refresh' Content='刷新列表' Background='#B8EB7E' Foreground='#16251B'/></StackPanel></DockPanel>
+  <DockPanel LastChildFill='False'><StackPanel DockPanel.Dock='Left'><TextBlock Text='服务器列表' FontSize='27' FontWeight='SemiBold'/><TextBlock Text='点击服务器同步射击地图；每 60 秒跟随换图，可在射击页停止跟随。' Foreground='#8298A8' FontSize='12' Margin='0,7,0,0'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='Cancel' Content='取消查询' Margin='0,0,10,0'/><Button x:Name='Refresh' Content='刷新列表' Background='#B8EB7E' Foreground='#16251B'/></StackPanel></DockPanel>
  <StackPanel Grid.Row='1'><Grid><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='130'/></Grid.ColumnDefinitions><Grid Margin='0,0,12,0'><TextBox x:Name='Search' ToolTip='搜索服务器名称、地图、模式或 IP' FontSize='13' Padding='10,7'/><TextBlock Text='搜索服务器名称 / 地图 / 模式 / IP' IsHitTestVisible='False' Foreground='#728A9B' FontSize='12' VerticalAlignment='Center' Margin='11,0'><TextBlock.Style><Style TargetType='TextBlock'><Setter Property='Visibility' Value='Collapsed'/><Style.Triggers><DataTrigger Binding='{Binding Text, ElementName=Search}' Value=''><Setter Property='Visibility' Value='Visible'/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid><ComboBox x:Name='Kind' Grid.Column='1' TextElement.Foreground='#EDF4F3'><ComboBox.ItemTemplate><DataTemplate><TextBlock Text='{Binding}' Foreground='#EDF4F3'/></DataTemplate></ComboBox.ItemTemplate></ComboBox></Grid><WrapPanel Margin='0,12,0,0'><CheckBox x:Name='FavoritesOnly' Content='只看收藏'/><CheckBox x:Name='Populated' Content='隐藏上报空服'/><CheckBox x:Name='Fold' Content='折叠相同连接入口' IsChecked='True'/><CheckBox x:Name='HideMismatch' Content='隐藏持续人数差异' ToolTip='仅隐藏经过连续核验的显著差异；不能等同于已确认阴兵'/><CheckBox x:Name='AutoCheck' Content='刷新后核验前 10 台' IsChecked='True'/></WrapPanel></StackPanel>
  <StackPanel Grid.Row='2'><TextBlock x:Name='Summary' Foreground='#B8EB7E' FontSize='11'/><TextBlock x:Name='Status' Text='列表每 60 秒刷新；离开此页暂停查询。' Foreground='#8298A8' FontSize='11' Margin='0,7,0,0' TextTrimming='CharacterEllipsis'/></StackPanel>
  <DataGrid x:Name='Servers' Grid.Row='3' AutoGenerateColumns='False' IsReadOnly='True' CanUserAddRows='False' CanUserDeleteRows='False' CanUserReorderColumns='False' EnableRowVirtualization='True' EnableColumnVirtualization='True' SelectionMode='Single' SelectionUnit='FullRow' HeadersVisibility='Column' GridLinesVisibility='Horizontal' HorizontalGridLinesBrush='#243541' BorderBrush='#283B49' Background='#101B24' RowHeaderWidth='0' FontSize='11' ScrollViewer.CanContentScroll='True'>

@@ -58,6 +58,23 @@ namespace SquadTools
 
     public static class MapCatalog
     {
+        public static MapDefinition FromServerLayer(IEnumerable<MapDefinition> maps, string layer)
+        {
+            if (String.IsNullOrWhiteSpace(layer)) return null;
+            if (layer.IndexOfAny(new[] { '/', '\\', '.' }) >= 0) return null;
+            // Match the map token, never a substring in an unrelated or unknown mod layer.
+            string token = Regex.Split(layer.Trim(), @"[_\s]+(?:RAAS|AAS|Invasion|Skirmish|Insurgency|Destruction|TerritoryControl|TC|Seed|Training|TrackAttack)(?:[_\s]|$)", RegexOptions.IgnoreCase)[0];
+            token = token.Split('_')[0];
+            token = MapToken(token);
+            foreach (MapDefinition map in maps) {
+                if (token == MapToken(map.Id) || token == MapToken(map.Name.Replace(" (Legacy)", ""))) return map;
+                if (map.Id == "jensen" && token == "jensensrange" || map.Id == "belaya" && token == "belayapass") return map;
+            }
+            return null;
+        }
+
+        private static string MapToken(string value) { return Regex.Replace(value.ToLowerInvariant(), "[^a-z0-9]", ""); }
+
         public static IList<MapDefinition> Load(string directory)
         {
             if (String.IsNullOrWhiteSpace(directory))

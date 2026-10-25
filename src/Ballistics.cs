@@ -119,6 +119,8 @@ namespace SquadTools
         public double LowTimeSeconds { get; private set; }
         public bool HighUsable { get; private set; }
         public bool LowUsable { get; private set; }
+        public bool PreferHigh { get; internal set; }
+        public bool SelectedHigh { get { return HighUsable && (PreferHigh || !LowUsable); } }
         public string Message { get; private set; }
 
         internal FiringSolution(double distance, double bearing, double heightDifference,
@@ -139,8 +141,8 @@ namespace SquadTools
     }
 
     /// <summary>
-    /// Standard Squad mortar, using SquadCalc's calibrated velocity and gravity.
-    /// Ground heights are relative to any common datum; the muzzle is 1 m above ground.
+    /// Squad weapons, using SquadCalc's calibrated velocity, gravity and elevation parameters.
+    /// Ground heights are relative to any common datum; muzzle offset depends on the weapon.
     /// No terrain collision or drag is modelled.
     /// </summary>
     public static class Ballistics
@@ -157,6 +159,13 @@ namespace SquadTools
         public static FiringSolution Solve(Vec2 weapon, Vec2 target,
             double weaponHeight, double targetHeight)
         {
+            return Solve(weapon, target, weaponHeight, targetHeight, WeaponCatalog.Default, WeaponCatalog.Default.Shells[0]);
+        }
+
+        public static FiringSolution Solve(Vec2 weapon, Vec2 target,
+            double weaponHeight, double targetHeight, WeaponDefinition profile, ShellDefinition shell)
+        {
+            if (profile == null || shell == null || !profile.Shells.Contains(shell)) throw new ArgumentException("请选择该武器的有效弹药。");
             ValidateFinite(weapon.X, "weapon.X");
             ValidateFinite(weapon.Y, "weapon.Y");
             ValidateFinite(target.X, "target.X");
@@ -176,11 +185,13 @@ namespace SquadTools
             if (distance == 0.0)
                 return Invalid(0, 0, heightDifference, "炮位与目标平面坐标相同，无法确定射向。");
 
-            double projectileHeight = heightDifference - MuzzleHeightOffset;
-            double velocitySquared = Velocity * Velocity;
-            double horizontalFactor = Gravity * distance / velocitySquared;
+            double gravity = Gravity * profile.GravityScale;
+            double velocity = profile.EffectiveVelocity(shell, distance);
+            double projectileHeight = heightDifference - profile.MuzzleHeight;
+            double velocitySquared = velocity * velocity;
+            double horizontalFactor = gravity * distance / velocitySquared;
             double discriminant = 1.0 - horizontalFactor * horizontalFactor
-                - 2.0 * Gravity * projectileHeight / velocitySquared;
+                - 2.0 * gravity * projectileHeight / velocitySquared;
 
             if (!IsFinite(discriminant))
                 return Invalid(distance, bearing, heightDifference, "坐标或高差过大，无法解算。");
@@ -193,27 +204,28 @@ namespace SquadTools
             // Rationalised low root avoids cancellation for near-level, short shots.
             double lowAngle = Math.Atan2(horizontalFactor + 2.0 * projectileHeight / distance,
                 1.0 + root);
-            double highMil = ClampAtLimits(highAngle * MilsPerCircle / (2.0 * Math.PI));
-            double lowMil = ClampAtLimits(lowAngle * MilsPerCircle / (2.0 * Math.PI));
+            double offsetMil = profile.AngleOffset * MilsPerCircle / 360;
+            double highMil = ClampAtLimits(highAngle * MilsPerCircle / (2.0 * Math.PI) - offsetMil, profile);
+            double lowMil = ClampAtLimits(lowAngle * MilsPerCircle / (2.0 * Math.PI) - offsetMil, profile);
 
             // Solve flight times using the same muzzle-adjusted height as elevation.
-            double timeFactor = velocitySquared - Gravity * projectileHeight + velocitySquared * root;
-            double highTime = Math.Sqrt(2.0 * timeFactor) / Gravity;
+            double timeFactor = velocitySquared - gravity * projectileHeight + velocitySquared * root;
+            double highTime = Math.Sqrt(2.0 * timeFactor) / gravity;
             double lowTime = Math.Sqrt(2.0 * (distance * distance + projectileHeight * projectileHeight) / timeFactor);
-            bool highUsable = IsUsable(highMil, highTime);
-            bool lowUsable = IsUsable(lowMil, lowTime);
+            bool highUsable = IsUsable(highMil, highTime, profile);
+            bool lowUsable = IsUsable(lowMil, lowTime, profile);
             string message;
             if (highUsable && lowUsable)
-                message = "高抛与低抛解均处于迫击炮仰角范围。";
+                message = "高抛与低抛解均处于所选武器仰角范围。";
             else if (highUsable)
                 message = "可用高抛解。";
             else if (lowUsable)
                 message = "可用低抛解。";
             else
-                message = "弹道存在，但仰角超出标准迫击炮范围（800 至 1580 密位）。";
+                message = "弹道存在，但超出所选武器仰角范围或弹丸存活时间。";
 
             return new FiringSolution(distance, bearing, heightDifference, highMil, lowMil,
-                highTime, lowTime, highUsable, lowUsable, message);
+                highTime, lowTime, highUsable, lowUsable, message) { PreferHigh = profile.PreferHigh };
         }
 
         private static FiringSolution Invalid(double distance, double bearing,
@@ -223,15 +235,17 @@ namespace SquadTools
                 Double.NaN, Double.NaN, Double.NaN, Double.NaN, false, false, message);
         }
 
-        private static bool IsUsable(double mil, double time)
+        private static bool IsUsable(double mil, double time, WeaponDefinition profile)
         {
-            return IsFinite(mil) && IsFinite(time) && time > 0.0 && mil >= MinMil && mil <= MaxMil;
+            return IsFinite(mil) && IsFinite(time) && time > 0.0 && time <= profile.Lifespan &&
+                mil >= profile.MinDegrees * MilsPerCircle / 360 && mil <= profile.MaxDegrees * MilsPerCircle / 360;
         }
 
-        private static double ClampAtLimits(double mil)
+        private static double ClampAtLimits(double mil, WeaponDefinition profile)
         {
-            if (Math.Abs(mil - MinMil) < 1e-7) return MinMil;
-            if (Math.Abs(mil - MaxMil) < 1e-7) return MaxMil;
+            double min = profile.MinDegrees * MilsPerCircle / 360, max = profile.MaxDegrees * MilsPerCircle / 360;
+            if (Math.Abs(mil - min) < 1e-7) return min;
+            if (Math.Abs(mil - max) < 1e-7) return max;
             return mil;
         }
 
