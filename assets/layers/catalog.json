@@ -1,0 +1,420 @@
+{
+  "schema": 1,
+  "sourceCommit": "24828d6d3081c7ce52b10ef39ec86036ebf010b5",
+  "fetchedAt": "2026-10-25T15:10:09.935Z",
+  "maps": [
+    {
+      "id": "albasrah",
+      "name": "Al Basrah",
+      "apiMap": "AlBasrah",
+      "originX": -2000,
+      "originY": -2000,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "AlBasrah_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "AlBasrah_RAAS_v2",
+          "name": "RAAS v2"
+        },
+        {
+          "rawName": "AlBasrah_RAAS_v3",
+          "name": "RAAS v3"
+        }
+      ]
+    },
+    {
+      "id": "anvil",
+      "name": "Anvil",
+      "apiMap": "Anvil",
+      "originX": -2040,
+      "originY": -2040,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Anvil_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Anvil_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "blackcoast",
+      "name": "Black Coast",
+      "apiMap": "BlackCoast",
+      "originX": -2299,
+      "originY": -2127,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "BlackCoast_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "BlackCoast_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "chora",
+      "name": "Chora",
+      "apiMap": "Chora",
+      "originX": -2464,
+      "originY": -2664,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Chora_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "fallujah",
+      "name": "Fallujah",
+      "apiMap": "Fallujah",
+      "originX": -1315,
+      "originY": -1545,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Fallujah_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Fallujah_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "foolsroad",
+      "name": "Fool's Road",
+      "apiMap": "FoolsRoad",
+      "originX": -1326,
+      "originY": -1326,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "FoolsRoad_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "goosebay",
+      "name": "Goose Bay",
+      "apiMap": "GooseBay",
+      "originX": -2016,
+      "originY": -2016,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "GooseBay_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "GooseBay_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "gorodok",
+      "name": "Gorodok",
+      "apiMap": "Gorodok",
+      "originX": -2032,
+      "originY": -2032,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Gorodok_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Gorodok_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "harju",
+      "name": "Harju",
+      "apiMap": "Harju",
+      "originX": -2016,
+      "originY": -2016,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Harju_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Harju_RAAS_v2",
+          "name": "RAAS v2"
+        },
+        {
+          "rawName": "Harju_RAAS_v3_CL",
+          "name": "RAAS v3"
+        }
+      ]
+    },
+    {
+      "id": "jensen",
+      "name": "Jensen's Range",
+      "apiMap": "Jensen",
+      "originX": -2004,
+      "originY": -2004,
+      "note": "本图没有 RAAS 图层",
+      "layers": []
+    },
+    {
+      "id": "kamdesh",
+      "name": "Kamdesh Highlands",
+      "apiMap": "Kamdesh",
+      "originX": -2016,
+      "originY": -2016,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Kamdesh_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "kohat",
+      "name": "Kohat Toi",
+      "apiMap": "Kohat",
+      "originX": -2300,
+      "originY": -2300,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Kohat_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Kohat_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "kokan",
+      "name": "Kokan",
+      "apiMap": "Kokan",
+      "originX": -1076,
+      "originY": -1076,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Kokan_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "lashkar",
+      "name": "Lashkar Valley",
+      "apiMap": "Lashkar",
+      "originX": -2167,
+      "originY": -2167,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Lashkar_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "logar",
+      "name": "Logar Valley",
+      "apiMap": "Logar",
+      "originX": -881,
+      "originY": -1132,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Logar_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "manicouagan",
+      "name": "Manicouagan",
+      "apiMap": "Manicouagan",
+      "originX": -2016,
+      "originY": -2016,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Manicouagan_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Manicouagan_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "mestia",
+      "name": "Mestia",
+      "apiMap": "Mestia",
+      "originX": -1200,
+      "originY": -1100,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Mestia_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "mutaha",
+      "name": "Mutaha",
+      "apiMap": "Mutaha",
+      "originX": -935,
+      "originY": -1140,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Mutaha_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Mutaha_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "narva",
+      "name": "Narva",
+      "apiMap": "Narva",
+      "originX": -1390,
+      "originY": -1402,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Narva_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "pacific",
+      "name": "Pacific Proving Grounds",
+      "apiMap": "Pacific",
+      "originX": -2016,
+      "originY": -2016,
+      "note": "本图没有 RAAS 图层",
+      "layers": []
+    },
+    {
+      "id": "sanxian",
+      "name": "Sanxian Islands",
+      "apiMap": "Sanxian",
+      "originX": -2300,
+      "originY": -2050,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Sanxian_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Sanxian_RAAS_v2",
+          "name": "RAAS v2"
+        },
+        {
+          "rawName": "Sanxian_RAAS_v3_CL",
+          "name": "RAAS v3"
+        }
+      ]
+    },
+    {
+      "id": "skorpo",
+      "name": "Skorpo",
+      "apiMap": "Skorpo",
+      "originX": -3611,
+      "originY": -3293,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Skorpo_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "sumari",
+      "name": "Sumari Bala",
+      "apiMap": "Sumari",
+      "originX": -640,
+      "originY": -447,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Sumari_RAAS_v1",
+          "name": "RAAS v1"
+        }
+      ]
+    },
+    {
+      "id": "tallil",
+      "name": "Tallil Outskirts",
+      "apiMap": "Tallil",
+      "originX": -2340,
+      "originY": -2340,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Tallil_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Tallil_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "yehorivka",
+      "name": "Yehorivka",
+      "apiMap": "Yehorivka",
+      "originX": -3302,
+      "originY": -3302,
+      "note": "",
+      "layers": [
+        {
+          "rawName": "Yehorivka_RAAS_v1",
+          "name": "RAAS v1"
+        },
+        {
+          "rawName": "Yehorivka_RAAS_v2",
+          "name": "RAAS v2"
+        }
+      ]
+    },
+    {
+      "id": "belaya",
+      "name": "Belaya Pass (Legacy)",
+      "apiMap": "Belaya",
+      "originX": -1954,
+      "originY": -2080,
+      "note": "已退役，数据源未提供图层",
+      "layers": []
+    }
+  ]
+}

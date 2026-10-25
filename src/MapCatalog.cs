@@ -21,11 +21,12 @@ namespace SquadTools
         public string HeightmapPath { get; private set; }
         public double HeightScale { get; private set; }
         public double HeightOffset { get; private set; }
+        public string SourceCommit { get; private set; }
         public bool HasTerrainHeight { get { return !String.IsNullOrEmpty(HeightmapPath); } }
 
         internal MapDefinition(string id, string name, string displayName,
             double width, double height, string imagePath, string heightmapPath,
-            double heightScale, double heightOffset)
+            double heightScale, double heightOffset, string sourceCommit = "")
         {
             Id = id;
             Name = name;
@@ -36,6 +37,7 @@ namespace SquadTools
             HeightmapPath = heightmapPath;
             HeightScale = heightScale;
             HeightOffset = heightOffset;
+            SourceCommit = sourceCommit;
         }
 
         public bool Contains(Vec2 position)
@@ -114,7 +116,7 @@ namespace SquadTools
                     Number(item, "width", true), Number(item, "height", true),
                     AssetPath(root, Required(item, "image")),
                     heightmap.Length == 0 ? String.Empty : AssetPath(root, heightmap),
-                    heightScale, Number(item, "heightOffset", false)));
+                    heightScale, Number(item, "heightOffset", false), document.DocumentElement.GetAttribute("sourceCommit")));
             }
             if (maps.Count == 0)
                 throw new InvalidDataException("离线地图目录中没有地图。");

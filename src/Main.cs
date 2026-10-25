@@ -41,6 +41,10 @@ namespace SquadTools
         private FiringSolution solution;
         private Vec2? preciseWeapon, preciseTarget;
         private readonly string dataDirectory;
+        private readonly string layersDirectory;
+        private RaasView raasView;
+        private bool raasMode;
+        private string currentLayerRawName;
         private string ImagePath { get { return Path.Combine(dataDirectory, "custom-map.png"); } }
 
         private sealed class MapChoice
@@ -57,6 +61,7 @@ namespace SquadTools
         internal MainWindow(bool testMode, string mapsDirectory, string settingsDirectory)
         {
             this.testMode = testMode; dataDirectory = settingsDirectory;
+            layersDirectory=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(mapsDirectory)),"layers");
             Title = "Squad Tools · 射击计算与服务器";
             Width = 1280; Height = 850; MinWidth = 1060; MinHeight = 740;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -87,14 +92,15 @@ namespace SquadTools
             ((Button)root.FindName("ZoomOut")).Click += delegate { map.ZoomBy(1 / 1.3); };
             ((Button)root.FindName("ResetView")).Click += delegate { map.ResetView(); };
             ((Button)root.FindName("Help")).Click += delegate { ShowHelp(); };
-            ((Button)root.FindName("MortarTab")).Click += delegate { SelectServerPage(false); };
+            ((Button)root.FindName("MortarTab")).Click += delegate { raasMode=false; SelectServerPage(false); };
+            ((Button)root.FindName("RaasTab")).Click += delegate { raasMode=true; SelectServerPage(false); };
             ((Button)root.FindName("ServerTab")).Click += delegate { SelectServerPage(true); };
             Closed += delegate { if (serverBrowser != null) serverBrowser.Dispose(); };
             ((CheckBox)root.FindName("Pin")).Checked += delegate { Topmost = true; };
             ((CheckBox)root.FindName("Pin")).Unchecked += delegate { Topmost = false; };
             ((RadioButton)root.FindName("PlaceMortar")).Checked += delegate { map.PlaceWeapon = true; };
             ((RadioButton)root.FindName("PlaceTarget")).Checked += delegate { map.PlaceWeapon = false; };
-            mapSelector.SelectionChanged += delegate { if (!loading) { StopServerFollow(); ApplySelectedMap(true); } };
+            mapSelector.SelectionChanged += delegate { if (!loading) { StopServerFollow(); currentLayerRawName=null; ApplySelectedMap(true); } };
             automaticHeight.Checked += delegate { if (!loading) { preferAutomaticHeight = true; UpdateHeightMode(); Recalculate(); } };
             automaticHeight.Unchecked += delegate { if (!loading) { preferAutomaticHeight = false; UpdateHeightMode(); Recalculate(); } };
             weaponGrid.TextChanged += delegate { if (!loading) { preciseWeapon = null; Recalculate(); } };
@@ -126,10 +132,41 @@ namespace SquadTools
             ((UIElement)root.FindName("MortarHeading")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
             ((UIElement)root.FindName("MortarBody")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
             ((TextBlock)root.FindName("ModeBadge")).Text = selected ? "●  在线列表" : followedServerId == null ? "●  离线可用" : "●  地图跟随";
-            ((Button)root.FindName("MortarTab")).Background = new SolidColorBrush(selected ? Color.FromRgb(35, 53, 67) : Color.FromRgb(55, 88, 63));
             ((Button)root.FindName("ServerTab")).Background = new SolidColorBrush(selected ? Color.FromRgb(55, 88, 63) : Color.FromRgb(35, 53, 67));
+            ((Button)root.FindName("MortarTab")).Background = new SolidColorBrush(!selected && !raasMode ? Color.FromRgb(55,88,63) : Color.FromRgb(35,53,67));
+            ((Button)root.FindName("RaasTab")).Background = new SolidColorBrush(!selected && raasMode ? Color.FromRgb(55,88,63) : Color.FromRgb(35,53,67));
+            ((UIElement)root.FindName("FireControls")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
+            ((UIElement)root.FindName("RaasHost")).Visibility=raasMode?Visibility.Visible:Visibility.Collapsed;
+            ((TextBlock)root.FindName("PageTitle")).Text=raasMode?"RAAS 路线猜点":"射击计算器";
+            ((TextBlock)root.FindName("PageDescription")).Text=raasMode?"选择地图、RAAS 图层和己方基地，依次确认旗点以收敛下一点。":"选择武器，标记炮位与目标，计算方位、仰角与飞行时间。";
+            ((RadioButton)root.FindName("PlaceTarget")).Visibility=((RadioButton)root.FindName("PlaceMortar")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
+            map.PredictionMode=raasMode;
+            ((TextBlock)root.FindName("MapGestureHint")).Text=raasMode?"左键确认候选旗点 · 右键拖动 · 滚轮缩放":"左键目标 · 右键拖动 · 右键双击炮位 · 滚轮缩放";
+            if(raasMode) EnsureRaasView();
             if (serverBrowser != null) serverBrowser.SetActive(selected);
         }
+
+        private void EnsureRaasView()
+        {
+            if(raasView==null) {
+                try {
+                    var repository=new RaasRepository(layersDirectory);
+                    if(mapChoices.Any(c=>c.Definition!=null && c.Definition.SourceCommit!=repository.SourceCommit)) throw new FormatException("RAAS 数据与底图标定版本不一致，请更新完整数据包。");
+                    raasView=new RaasView(repository);
+                    ((Border)((FrameworkElement)Content).FindName("RaasHost")).Child=raasView;
+                    raasView.MarkersChanged+=map.SetPredictionMarkers;
+                    map.PredictionPointClicked+=raasView.ClickPoint;
+                    raasView.MapRequested+=delegate(string id) {
+                        var choice=mapChoices.Find(c=>c.Id==id); if(choice==null) return;
+                        if(mapSelector.SelectedItem==choice) { StopServerFollow(); currentLayerRawName=null; UpdateRaasMap(); }
+                        else mapSelector.SelectedItem=choice;
+                    };
+                    raasView.LayerRequested+=delegate(string raw) { StopServerFollow(); currentLayerRawName=raw; };
+                } catch(Exception ex) { if(!(ex is IOException) && !(ex is UnauthorizedAccessException) && !(ex is FormatException) && !(ex is ArgumentException)) throw; ((Border)((FrameworkElement)Content).FindName("RaasHost")).Child=new TextBlock { Text="RAAS 数据无法读取："+ex.Message,TextWrapping=TextWrapping.Wrap,Foreground=Brushes.Salmon }; return; }
+            }
+            UpdateRaasMap();
+        }
+        private void UpdateRaasMap() { if(raasView!=null) raasView.SetMap(selectedMap==null?"custom":selectedMap.Id,currentLayerRawName); }
 
         private void SelectWeapon(string id, string shellId)
         {
@@ -167,22 +204,26 @@ namespace SquadTools
         private void UpdateFollowedServer(ServerRecord server)
         {
             if (followedServerId == null) return;
-            if (server == null) { serverMapNote.Text = "未取得所跟随服务器的数据，保留当前地图。"; return; }
+            if (server == null) { serverMapNote.Text = "未取得所跟随服务器的数据，保留当前地图。"; if(raasView!=null) raasView.ShowNotice("暂未取得服务器最新状态，当前显示上次已知图层。"); return; }
             var choice = ServerMapChoice(server);
-            if (choice == null) { serverMapNote.Text = "服务器地图暂不支持：" + server.Map + "，保留当前地图。"; return; }
+            if (choice == null) { serverMapNote.Text = "服务器地图暂不支持：" + server.Map + "，保留当前地图。"; currentLayerRawName=server.Map; UpdateRaasMap(); if(raasView!=null) raasView.ShowNotice("服务器已换为未收录地图："+server.Map+"，已暂停旧图层的猜点。"); return; }
             ApplyServerMap(server, choice);
         }
 
         private void ApplyServerMap(ServerRecord server, MapChoice choice)
         {
+            bool layerChanged=!string.Equals(currentLayerRawName,server.Map,StringComparison.OrdinalIgnoreCase);
+            currentLayerRawName=server.Map;
             if (mapSelector.SelectedItem != choice) {
                 bool wasLoading = loading; loading = true;
                 try { mapSelector.SelectedItem = choice; } finally { loading = wasLoading; }
                 ApplySelectedMap(true);
             }
+            else if(layerChanged) UpdateRaasMap();
             serverMapNote.Text = "跟随地图：" + server.Map + "\n" + server.Name;
             serverMapNote.ToolTip = server.Name + " · 每 60 秒同步地图";
             stopServerFollow.Visibility = Visibility.Visible;
+            if(raasView!=null) raasView.ShowNotice(null);
         }
 
         private void StopServerFollow()
@@ -265,6 +306,7 @@ namespace SquadTools
             catch (Exception ex) { mapError = "地图加载失败：" + ex.Message; terrain = null; automaticHeight.IsEnabled = false; automaticHeight.IsChecked = false; UpdateHeightMode(); }
             finally { loading = wasLoading; }
             if (!loading) Recalculate();
+            UpdateRaasMap();
         }
 
         private void UpdateHeightMode()
@@ -503,6 +545,7 @@ namespace SquadTools
                 "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
                 "贝拉亚为暂退役的旧版地图，仅提供底图和手动高差。本版不判断地形遮挡，不含 OCR 或游戏读取，命中精度尚未经游戏实测。\n\n" +
                 "服务器列表：点击服务器行或按 Enter 即同步射击地图，并每 60 秒跟随换图。可在射击页停止跟随；手动换图也会停止。未知地图保留当前底图。上报人数、EOS 登记与可见成员口径不同；持续差异提示不等于已证实阴兵。\n\n" +
+                "RAAS 猜点：顶部选择该页，指定地图、具体 RAAS 图层和己方基地，依次确认旗点。支持上一步与重置，数据内置且可离线计算；切换图层会重置旧的选择。概率为路线模型估计，游戏更新后可能需要更新数据。\n\n" +
                 "算法及游戏参数参考 sh4rkman/SquadCalc（非商业许可）。地图素材归各自权利人。详见随附说明与 third_party。",
                 "使用说明 · 游戏 Squad 专用");
         }
@@ -637,14 +680,15 @@ namespace SquadTools
   </Grid.Resources>
   <Grid.RowDefinitions><RowDefinition Height='50'/><RowDefinition Height='68'/><RowDefinition Height='*'/><RowDefinition Height='30'/></Grid.RowDefinitions>
   <DockPanel Grid.Row='0' LastChildFill='False'>
-    <StackPanel DockPanel.Dock='Left' Orientation='Horizontal'><Border Background='#B8EB7E' CornerRadius='5' Width='30' Height='30' VerticalAlignment='Top'><TextBlock Text='S' Foreground='#15251B' FontSize='20' FontWeight='Bold' HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><TextBlock Text='SQUAD TOOLS' FontWeight='SemiBold' FontSize='16' Margin='12,4,22,0'/><Button x:Name='MortarTab' Content='射击计算' Background='#37583F' Padding='16,7' VerticalAlignment='Top' Margin='0,0,8,0'/><Button x:Name='ServerTab' Content='服务器列表' Padding='16,7' VerticalAlignment='Top'/></StackPanel>
+    <StackPanel DockPanel.Dock='Left' Orientation='Horizontal'><Border Background='#B8EB7E' CornerRadius='5' Width='30' Height='30' VerticalAlignment='Top'><TextBlock Text='S' Foreground='#15251B' FontSize='20' FontWeight='Bold' HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><TextBlock Text='SQUAD TOOLS' FontWeight='SemiBold' FontSize='16' Margin='12,4,22,0'/><Button x:Name='MortarTab' Content='射击计算' Background='#37583F' Padding='16,7' VerticalAlignment='Top' Margin='0,0,8,0'/><Button x:Name='RaasTab' Content='RAAS 猜点' Padding='16,7' VerticalAlignment='Top' Margin='0,0,8,0'/><Button x:Name='ServerTab' Content='服务器列表' Padding='16,7' VerticalAlignment='Top'/></StackPanel>
     <StackPanel DockPanel.Dock='Right' Orientation='Horizontal'><Border Background='#172D24' CornerRadius='12' Padding='12,5' VerticalAlignment='Top' Margin='0,0,18,0'><TextBlock x:Name='ModeBadge' Text='●  离线可用' Foreground='#B8EB7E' FontSize='11'/></Border><CheckBox x:Name='Pin' Content='窗口置顶' Foreground='#B5C5CC' VerticalAlignment='Top' Margin='0,6,18,0'/><Button x:Name='Help' Content='使用说明' Padding='11,6' VerticalAlignment='Top'/></StackPanel>
   </DockPanel>
-  <StackPanel x:Name='MortarHeading' Grid.Row='1'><TextBlock Text='射击计算器' FontSize='27' FontWeight='SemiBold'/><TextBlock Text='选择武器，标记炮位与目标，计算方位、仰角与飞行时间。' Foreground='#8298A8' Margin='0,7,0,0' FontSize='12'/></StackPanel>
+  <StackPanel x:Name='MortarHeading' Grid.Row='1'><TextBlock x:Name='PageTitle' Text='射击计算器' FontSize='27' FontWeight='SemiBold'/><TextBlock x:Name='PageDescription' Text='选择武器，标记炮位与目标，计算方位、仰角与飞行时间。' Foreground='#8298A8' Margin='0,7,0,0' FontSize='12'/></StackPanel>
   <Grid x:Name='MortarBody' Grid.Row='2'>
     <Grid.ColumnDefinitions><ColumnDefinition Width='300'/><ColumnDefinition Width='18'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
     <Border Background='#14212C' BorderBrush='#283B49' BorderThickness='1' CornerRadius='8' Padding='20,17'>
-      <Grid><Grid.RowDefinitions><RowDefinition Height='*'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
+      <Grid><Border x:Name='RaasHost' Visibility='Collapsed'/>
+      <Grid x:Name='FireControls'><Grid.RowDefinitions><RowDefinition Height='*'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
       <ScrollViewer VerticalScrollBarVisibility='Auto' HorizontalScrollBarVisibility='Disabled'>
       <StackPanel>
         <Grid Margin='0,0,0,7'><Grid.ColumnDefinitions><ColumnDefinition Width='70'/><ColumnDefinition Width='8'/><ColumnDefinition/></Grid.ColumnDefinitions><ComboBox x:Name='WeaponCategory'/><ComboBox x:Name='WeaponSelector' Grid.Column='2'/></Grid>
@@ -677,20 +721,21 @@ namespace SquadTools
         <TextBlock x:Name='TerrainNote' Text='本地地图与地形高程' Foreground='#91A5B4' TextWrapping='Wrap' FontSize='10'/>
       </StackPanel>
       </Grid>
+      </Grid>
     </Border>
     <Border Grid.Column='2' Background='#101B24' BorderBrush='#283B49' BorderThickness='1' CornerRadius='8'>
       <Grid><Grid.RowDefinitions><RowDefinition Height='56'/><RowDefinition Height='*'/><RowDefinition Height='56'/></Grid.RowDefinitions>
         <DockPanel Margin='16,0' LastChildFill='False'><StackPanel DockPanel.Dock='Left' Orientation='Horizontal' VerticalAlignment='Center'><StackPanel Width='230' Margin='0,0,16,0'><TextBlock x:Name='MapName' Text='离线坐标网格' FontWeight='SemiBold' TextTrimming='CharacterEllipsis'/><TextBlock x:Name='MapInfo' Foreground='#8196A5' FontSize='10' Margin='0,4,0,0'/></StackPanel><RadioButton x:Name='PlaceTarget' Content='放目标' IsChecked='True' GroupName='Mode'/><RadioButton x:Name='PlaceMortar' Content='放炮位' GroupName='Mode'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ZoomOut' Content='−' Padding='11,5' Margin='0,0,5,0'/><Button x:Name='ZoomIn' Content='+' Padding='11,5' Margin='0,0,5,0'/><Button x:Name='ResetView' Content='全图' Padding='10,5'/></StackPanel></DockPanel>
         <Border Grid.Row='1' x:Name='MapHost' BorderBrush='#283B49' BorderThickness='0,1'/>
         <Grid Grid.Row='2' Margin='16,10'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions>
-          <TextBlock Text='左键目标 · 右键拖动 · 右键双击炮位 · 滚轮缩放' TextWrapping='Wrap' Margin='0,0,12,0' Foreground='#728A9B' FontSize='11' VerticalAlignment='Center'/>
+          <TextBlock x:Name='MapGestureHint' Text='左键目标 · 右键拖动 · 右键双击炮位 · 滚轮缩放' TextWrapping='Wrap' Margin='0,0,12,0' Foreground='#728A9B' FontSize='11' VerticalAlignment='Center'/>
           <StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ClearMap' Content='空白网格' Margin='0,0,8,0'/><Button x:Name='ImportMap' Content='导入自定义图片'/></StackPanel>
         </Grid>
       </Grid>
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  0.4.1 预览版' Foreground='#607B8E' FontSize='10'/><TextBlock Text='迫击炮离线可用 · 服务器按需联网' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
+  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  0.5.0 预览版' Foreground='#607B8E' FontSize='10'/><TextBlock Text='迫击炮离线可用 · 服务器按需联网' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
 </Grid>";
     }
 

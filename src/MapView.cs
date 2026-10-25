@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -19,6 +20,12 @@ namespace SquadTools
         public bool PlaceWeapon;
         public double RangeMeters = Ballistics.Velocity * Ballistics.Velocity / Ballistics.Gravity;
         public event Action<Vec2, bool> PointPlaced;
+        public event Action<RaasPoint> PredictionPointClicked;
+        private IList<RaasMarker> predictionMarkers = new List<RaasMarker>();
+        private bool predictionMode;
+        private int predictionRevision, drawnPredictionRevision;
+        public bool PredictionMode { get { return predictionMode; } set { if(predictionMode==value) return; predictionMode=value; predictionRevision++; InvalidateVisual(); } }
+        public void SetPredictionMarkers(IList<RaasMarker> markers) { predictionMarkers=markers??new List<RaasMarker>(); ToolTip=null; predictionRevision++; InvalidateVisual(); }
         private double zoom = 1;
         private Vector pan;
         private Point dragStart;
@@ -125,7 +132,18 @@ namespace SquadTools
                 return true;
             }
             rightClickPending = false;
+            if (button == MouseButton.Left && PredictionMode) { ClickPrediction(position); return true; }
             return button == MouseButton.Left && PlaceAt(position, PlaceWeapon);
+        }
+
+        private void ClickPrediction(Point position)
+        {
+            RaasMarker closest=null; double best=20*20;
+            foreach(var marker in predictionMarkers.Where(m=>m.Clickable)) {
+                Point p=Screen(marker.Point.Position); double distance=(p-position).LengthSquared;
+                if(distance<=best) { closest=marker; best=distance; }
+            }
+            if(closest!=null && PredictionPointClicked!=null) PredictionPointClicked(closest.Point);
         }
 
         private bool PlaceAt(Point position, bool weapon)
@@ -139,6 +157,11 @@ namespace SquadTools
         private void OnMove(object sender, MouseEventArgs e)
         {
             MoveDrag(e.GetPosition(this));
+            if(PredictionMode && !dragging) {
+                Point cursor=e.GetPosition(this);
+                var marker=predictionMarkers.OrderBy(m=>(Screen(m.Point.Position)-cursor).LengthSquared).FirstOrDefault();
+                ToolTip=marker!=null && (Screen(marker.Point.Position)-cursor).LengthSquared<=400?marker.Caption+"\n顺位 "+marker.Label:null;
+            } else ToolTip=null;
         }
 
         private void BeginPan()
@@ -177,7 +200,7 @@ namespace SquadTools
             // LostMouseCapture also clears click state, so restore it afterwards.
             EndDrag();
             rightClickPending = firstRightClick;
-            if (placeWeapon) PlaceAt(position, true);
+            if (placeWeapon && !PredictionMode) PlaceAt(position, true);
             return true;
         }
 
@@ -248,7 +271,7 @@ namespace SquadTools
             if (ActualWidth < 10 || ActualHeight < 10) return;
             double scale = Scale, dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
             bool rebuild = !sceneReady || drawnScale != scale || drawnWidth != WorldSize || drawnHeight != WorldHeight ||
-                drawnImage != MapImage || drawnMarkers != HasMarkers || drawnDpi != dpi || drawnRange != RangeMeters ||
+                drawnImage != MapImage || drawnMarkers != HasMarkers || drawnDpi != dpi || drawnRange != RangeMeters || drawnPredictionRevision != predictionRevision ||
                 drawnWeapon.X != Weapon.X || drawnWeapon.Y != Weapon.Y || drawnTarget.X != Target.X || drawnTarget.Y != Target.Y;
             if (rebuild)
             {
@@ -258,6 +281,7 @@ namespace SquadTools
                 BuildScene(scale);
                 drawnScale = scale; drawnWidth = WorldSize; drawnHeight = WorldHeight; drawnImage = MapImage;
                 drawnMarkers = HasMarkers; drawnWeapon = Weapon; drawnTarget = Target; drawnRange = RangeMeters; sceneReady = true;
+                drawnPredictionRevision=predictionRevision;
             }
             Point origin = Origin;
             double width = WorldSize * scale, height = WorldHeight * scale;
@@ -284,7 +308,7 @@ namespace SquadTools
             {
                 dc.DrawRectangle(Brush("#182630"), Line("#3C5262", 1), bounds);
                 if (MapImage != null) dc.DrawImage(MapImage, bounds);
-                if (HasMarkers)
+                if (HasMarkers && !PredictionMode)
                 {
                     double radius = RangeMeters * scale;
                     dc.DrawEllipse(Brush("#1CAEDE75"), null, Local(Weapon, scale), radius, radius);
@@ -312,7 +336,7 @@ namespace SquadTools
             }
             using (DrawingContext dc = overlay.RenderOpen())
             {
-                if (HasMarkers)
+                if (HasMarkers && !PredictionMode)
                 {
                     double radius = RangeMeters * scale;
                     Point a = Local(Weapon, scale), b = Local(Target, scale);
@@ -325,6 +349,7 @@ namespace SquadTools
                     dc.DrawRoundedRectangle(Brush("#ED101B24"), null, new Rect(mid.X - 38, mid.Y - 43, 92, 26), 5, 5);
                     Text(dc, distance.ToString("F0") + " m", mid.X - 26, mid.Y - 39, 12, "#EFE9C8");
                 }
+                if(PredictionMode) DrawPrediction(dc,scale);
             }
             using (DrawingContext dc = columnLabels.RenderOpen())
                 if (300 * scale > 16)
@@ -342,6 +367,38 @@ namespace SquadTools
                     }
         }
 
+        private void DrawPrediction(DrawingContext dc,double scale)
+        {
+            var confirmed=predictionMarkers.Where(m=>m.ConfirmedStep>0).OrderBy(m=>m.ConfirmedStep).ToList();
+            var main=predictionMarkers.FirstOrDefault(m=>m.SelectedMain);
+            var path=confirmed.Select(m=>m.Point).ToList(); if(main!=null) path.Insert(0,main.Point);
+            for(int i=1;i<path.Count;i++) dc.DrawLine(Line("#EEF5FF",2),Local(path[i-1].Position,scale),Local(path[i].Position,scale));
+            var ordered=predictionMarkers.OrderBy(m=>m.Clickable?1:0).ToList();
+            var occupied=ordered.Select(m=> { var p=Local(m.Point.Position,scale); return new Rect(p.X-18,p.Y-18,36,36); }).ToList();
+            foreach(var marker in ordered) {
+                Point p=Local(marker.Point.Position,scale); string color=marker.Color;
+                double radius=marker.Point.IsMain?16:14;
+                dc.DrawEllipse(Brush("#EC101B24"),Line(color,2.5),p,radius,radius);
+                Text(dc,marker.Label,p.X-(marker.Label.Length>1?10:4),p.Y-8,12,color);
+            }
+            foreach(var marker in ordered.OrderByDescending(m=>m.Clickable)) {
+                if(!marker.Clickable && scale*100<24) continue;
+                Point p=Local(marker.Point.Position,scale); string color=marker.Color;
+                string[] lines=marker.Caption.Split('\n');
+                string name=lines[0].Length>28?lines[0].Substring(0,27)+"…":lines[0];
+                double width=Math.Max(62,name.Sum(c=>c>127?10:5.8)+10),height=lines.Length>1?31:17;
+                var choices=new[]{new Rect(p.X-width/2,p.Y-height-21,width,height),new Rect(p.X-width/2,p.Y+21,width,height),new Rect(p.X+22,p.Y-height/2,width,height),new Rect(p.X-width-22,p.Y-height/2,width,height),new Rect(p.X-width/2,p.Y-height-45,width,height)};
+                var bounds=new Rect(0,0,WorldSize*scale,WorldHeight*scale);
+                Rect? chosen=null;
+                foreach(var rect in choices) if(bounds.Contains(rect) && !occupied.Any(other=>other.IntersectsWith(rect))) { chosen=rect; break; }
+                if(!chosen.HasValue) continue;
+                var label=chosen.Value; occupied.Add(label);
+                dc.DrawRoundedRectangle(Brush("#EB101B24"),null,label,3,3);
+                Text(dc,name,label.X+5,label.Y+1,10,"#F1F5F8");
+                if(lines.Length>1) Text(dc,lines[1],label.X+5,label.Y+15,10,color);
+            }
+        }
+
         private void BuildHud(double scale)
         {
             HudBuildCount++;
@@ -356,7 +413,7 @@ namespace SquadTools
                 dc.DrawRoundedRectangle(Brush("#E8101B24"), null, new Rect(15, ActualHeight - 48, scaleLength + 28, 36), 4, 4);
                 dc.DrawLine(Line("#BECDD5", 2), new Point(28, ActualHeight - 22), new Point(28 + scaleLength, ActualHeight - 22));
                 Text(dc, (scaleLength / scale).ToString("F0") + " m", 29, ActualHeight - 44, 10, "#BECDD5");
-                if (HasMarkers)
+                if (HasMarkers && !PredictionMode)
                 {
                     dc.DrawRoundedRectangle(Brush("#D9101B24"), null, new Rect(ActualWidth - 181, ActualHeight - 41, 166, 26), 4, 4);
                     dc.DrawLine(Line("#D4F58C", 2), new Point(ActualWidth - 171, ActualHeight - 28), new Point(ActualWidth - 155, ActualHeight - 28));

@@ -9,7 +9,7 @@ foreach ($taskName in @('SquadTools.exe','README.md','LICENSE')) {
     if (-not (Test-Path -LiteralPath $taskPath -PathType Leaf)) { throw ('Missing package file: ' + $taskName + '. Run build.ps1 first.') }
     $taskFiles += Get-Item -LiteralPath $taskPath
 }
-foreach ($taskName in @('maps','docs','third_party')) {
+foreach ($taskName in @('maps','layers','docs','third_party')) {
     $taskPath = Join-Path $taskDist $taskName
     if (-not (Test-Path -LiteralPath $taskPath -PathType Container)) { throw ('Missing package directory: ' + $taskName) }
     $taskEntries = Get-ChildItem -LiteralPath $taskPath -Recurse
@@ -32,7 +32,7 @@ try {
     $taskZip = [IO.Compression.ZipFile]::OpenRead($taskTemp)
     try {
         if ($taskZip.Entries.Count -ne $taskFiles.Count) { throw 'Package file count mismatch.' }
-        foreach ($taskRequired in @('SquadTools.exe','maps/catalog.xml','docs/SERVER_BROWSER.md')) {
+        foreach ($taskRequired in @('SquadTools.exe','maps/catalog.xml','layers/catalog.json','docs/SERVER_BROWSER.md')) {
             if (-not $taskZip.GetEntry($taskRequired)) { throw ('Package verification failed: ' + $taskRequired) }
         }
         if ($taskZip.Entries | Where-Object { $_.FullName -like 'data/*' }) { throw 'User settings must not be packaged.' }
