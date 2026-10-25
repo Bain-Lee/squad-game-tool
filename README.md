@@ -25,7 +25,9 @@
 
 ## Git 版本
 
-迫击炮开发基线：标签 `mortar-v0.2.3`，提交 `30f1d1b593ada59a53633c820b3327309d3950aa`。服务器工具在 `codex/server-browser` 分支开发。当前仓库未配置远程地址，属于本地 Git 版本管理。
+项目仓库：[Bain-Lee/squad-game-tool](https://github.com/Bain-Lee/squad-game-tool)。`main` 提供当前版本，`codex/server-browser` 保留服务器工具开发分支，既有提交历史和版本标签一并保留。
+
+迫击炮开发基线：标签 `mortar-v0.2.3`，提交 `30f1d1b593ada59a53633c820b3327309d3950aa`。克隆源码后，按下文取得地图资源，再运行 `build.ps1` 构建；Git 仓库不包含本机设置或便携包。
 
 原迫击炮便携包另外保留在 `build/releases/SquadTools-mortar-v0.2.3.zip`（本机备份，未纳入 Git）。Git 不包含地图大文件；恢复旧版本时仍需保留地图资源或按下文重新取得。
 

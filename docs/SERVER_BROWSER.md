@@ -72,9 +72,9 @@ Steamworks.NET 使用官方 `2025.164.1` Windows x64 发布组件。压缩包已
 
 - 迫击炮基线标签：`mortar-v0.2.3`。
 - 基线提交：`30f1d1b593ada59a53633c820b3327309d3950aa`。
-- 服务器开发分支：`codex/server-browser`；`main` 保留原迫击炮提交。
+- 当前版本分支：`main`；服务器开发分支：`codex/server-browser`。原迫击炮提交由 `mortar-v0.2.3` 标签保留。
 - 本机原便携包：`build/releases/SquadTools-mortar-v0.2.3.zip`，未纳入 Git。
 - 原包 SHA-256：`C4CD93FE3F7543DCD9B83CF8FA412DFE2C4A595220810EAB2332B1E5D827680F`。
-- 仓库尚无远程地址，没有推送到 GitHub。
+- GitHub 仓库：[Bain-Lee/squad-game-tool](https://github.com/Bain-Lee/squad-game-tool)，本地远程名称为 `origin`。
 
 代码可从标签恢复，离线地图仍是 Git 忽略的大文件；不要把 Git 标签当成地图素材和用户设置的完整备份。新版便携包通过 `scripts/package.ps1` 生成，明确排除本机 `data` 目录。
