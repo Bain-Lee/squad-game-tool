@@ -25,7 +25,7 @@
 
 ## Git 版本
 
-项目仓库：[Bain-Lee/squad-game-tool](https://github.com/Bain-Lee/squad-game-tool)。`main` 提供当前版本，`codex/server-browser` 保留服务器工具开发分支，既有提交历史和版本标签一并保留。
+项目仓库：[Bain-Lee/squad-game-tool](https://github.com/Bain-Lee/squad-game-tool)。`main` 提供当前版本，`server-browser` 保留服务器工具开发分支，既有提交历史和版本标签一并保留。
 
 迫击炮开发基线：标签 `mortar-v0.2.3`，提交 `30f1d1b593ada59a53633c820b3327309d3950aa`。克隆源码后，按下文取得地图资源，再运行 `build.ps1` 构建；Git 仓库不包含本机设置或便携包。
 
