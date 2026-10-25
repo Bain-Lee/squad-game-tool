@@ -30,6 +30,8 @@ namespace SquadTools
         private string mapError;
         private MapView map;
         private bool loading = true;
+        private readonly bool testMode;
+        private ServerBrowserView serverBrowser;
         private FiringSolution solution;
         private Vec2? preciseWeapon, preciseTarget;
         private readonly string dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
@@ -44,7 +46,8 @@ namespace SquadTools
 
         public MainWindow(bool testMode)
         {
-            Title = "Squad Tools · 迫击炮计算器";
+            this.testMode = testMode;
+            Title = "Squad Tools · 迫击炮与服务器";
             Width = 1280; Height = 850; MinWidth = 1060; MinHeight = 740;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = (Brush)new BrushConverter().ConvertFromString("#0C141C");
@@ -67,6 +70,9 @@ namespace SquadTools
             ((Button)root.FindName("ZoomOut")).Click += delegate { map.ZoomBy(1 / 1.3); };
             ((Button)root.FindName("ResetView")).Click += delegate { map.ResetView(); };
             ((Button)root.FindName("Help")).Click += delegate { ShowHelp(); };
+            ((Button)root.FindName("MortarTab")).Click += delegate { SelectServerPage(false); };
+            ((Button)root.FindName("ServerTab")).Click += delegate { SelectServerPage(true); };
+            Closed += delegate { if (serverBrowser != null) serverBrowser.Dispose(); };
             ((CheckBox)root.FindName("Pin")).Checked += delegate { Topmost = true; };
             ((CheckBox)root.FindName("Pin")).Unchecked += delegate { Topmost = false; };
             ((RadioButton)root.FindName("PlaceMortar")).Checked += delegate { map.PlaceWeapon = true; };
@@ -87,6 +93,33 @@ namespace SquadTools
             ApplySelectedMap(false);
             loading = false; Recalculate();
             if (!testMode) Closing += delegate { SaveSettings(); };
+        }
+
+        private void SelectServerPage(bool selected)
+        {
+            var root = (FrameworkElement)Content;
+            var host = (Border)root.FindName("ServerHost");
+            if (selected && serverBrowser == null) { serverBrowser = new ServerBrowserView(testMode); host.Child = serverBrowser; }
+            host.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+            ((UIElement)root.FindName("MortarHeading")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
+            ((UIElement)root.FindName("MortarBody")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
+            ((TextBlock)root.FindName("ModeBadge")).Text = selected ? "●  在线列表" : "●  离线可用";
+            ((Button)root.FindName("MortarTab")).Background = new SolidColorBrush(selected ? Color.FromRgb(35, 53, 67) : Color.FromRgb(55, 88, 63));
+            ((Button)root.FindName("ServerTab")).Background = new SolidColorBrush(selected ? Color.FromRgb(55, 88, 63) : Color.FromRgb(35, 53, 67));
+            if (serverBrowser != null) serverBrowser.SetActive(selected);
+        }
+
+        public void ServerSmokeTest(string outputPath, ServerSnapshot sample)
+        {
+            string oldWeapon = weaponGrid.Text, oldTarget = targetGrid.Text; var oldSolution = solution;
+            SelectServerPage(true); serverBrowser.LoadSmokeSnapshot(sample);
+            SelectServerPage(false);
+            if (weaponGrid.Text != oldWeapon || targetGrid.Text != oldTarget || solution != oldSolution) throw new InvalidOperationException("Page switching changed mortar data.");
+            SelectServerPage(true); UpdateLayout();
+            var bitmap = new RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32); bitmap.Render(this);
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using (var file = File.Create(outputPath)) encoder.Save(file);
+            File.WriteAllText(Path.ChangeExtension(outputPath, ".txt"), "PASS: server page, search/empty state, favorites, endpoint folding, mortar state preserved across page switches; no network, Steam launch or user settings in smoke mode.\r\n", Encoding.UTF8);
         }
 
         private void PlacePoint(Vec2 position, bool mortar)
@@ -378,6 +411,7 @@ namespace SquadTools
                 "4. 方位 0° 为北、90° 为东。密位采用 6400/圈；标准迫击炮可用角 800–1580 mil。飞行时间为理论估算。\n\n" +
                 "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
                 "贝拉亚为暂退役的旧版地图，仅提供底图和手动高差。本版不判断地形遮挡，不含 OCR 或游戏读取，命中精度尚未经游戏实测。\n\n" +
+                "服务器列表：点击顶部页面后联网，可搜索、筛选、收藏并核验人数。上报人数、EOS 登记与可见成员口径不同；持续差异提示不等于已证实阴兵。加入按钮为实验性，需 Steam 和 Squad。\n\n" +
                 "算法及游戏参数参考 sh4rkman/SquadCalc（非商业许可）。地图素材归各自权利人。详见随附说明与 third_party。",
                 "使用说明 · 游戏 Squad 专用");
         }
@@ -503,8 +537,8 @@ namespace SquadTools
     <Style TargetType='ComboBox'>
       <Setter Property='Foreground' Value='#EDF4F3'/><Setter Property='FontSize' Value='11'/><Setter Property='IsTextSearchEnabled' Value='True'/>
       <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ComboBox'><Grid>
-        <ToggleButton Focusable='False' IsChecked='{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}'>
-          <ToggleButton.Template><ControlTemplate TargetType='ToggleButton'><Border Background='#203340' BorderBrush='#405565' BorderThickness='1' CornerRadius='5' Padding='10,10'><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='18'/></Grid.ColumnDefinitions><ContentPresenter Content='{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}'/><TextBlock Grid.Column='1' Text='▾' HorizontalAlignment='Right' Foreground='#B8EB7E'/></Grid></Border></ControlTemplate></ToggleButton.Template>
+        <ToggleButton Focusable='False' Foreground='#EDF4F3' IsChecked='{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}'>
+          <ToggleButton.Template><ControlTemplate TargetType='ToggleButton'><Border Background='#203340' BorderBrush='#405565' BorderThickness='1' CornerRadius='5' Padding='10,10'><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='18'/></Grid.ColumnDefinitions><ContentPresenter Content='{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}' ContentTemplate='{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}' TextElement.Foreground='#EDF4F3'/><TextBlock Grid.Column='1' Text='▾' HorizontalAlignment='Right' Foreground='#B8EB7E'/></Grid></Border></ControlTemplate></ToggleButton.Template>
         </ToggleButton>
         <Popup x:Name='PART_Popup' IsOpen='{TemplateBinding IsDropDownOpen}' Placement='Bottom' AllowsTransparency='True' Focusable='False'><Border Background='#1B2B37' BorderBrush='#405565' BorderThickness='1' MinWidth='{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}' MaxHeight='430'><ScrollViewer VerticalScrollBarVisibility='Auto'><ItemsPresenter KeyboardNavigation.DirectionalNavigation='Contained'/></ScrollViewer></Border></Popup>
       </Grid></ControlTemplate></Setter.Value></Setter>
@@ -512,11 +546,11 @@ namespace SquadTools
   </Grid.Resources>
   <Grid.RowDefinitions><RowDefinition Height='50'/><RowDefinition Height='68'/><RowDefinition Height='*'/><RowDefinition Height='30'/></Grid.RowDefinitions>
   <DockPanel Grid.Row='0' LastChildFill='False'>
-    <StackPanel DockPanel.Dock='Left' Orientation='Horizontal'><Border Background='#B8EB7E' CornerRadius='5' Width='30' Height='30'><TextBlock Text='S' Foreground='#15251B' FontSize='20' FontWeight='Bold' HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><TextBlock Text='SQUAD TOOLS' FontWeight='SemiBold' FontSize='16' Margin='12,4,0,0'/><TextBlock Text=' /  本地工具箱' Foreground='#758D9F' FontSize='12' Margin='10,8,0,0'/></StackPanel>
-    <StackPanel DockPanel.Dock='Right' Orientation='Horizontal'><Border Background='#172D24' CornerRadius='12' Padding='12,5' VerticalAlignment='Top' Margin='0,0,18,0'><TextBlock Text='●  离线可用' Foreground='#B8EB7E' FontSize='11'/></Border><CheckBox x:Name='Pin' Content='窗口置顶' Foreground='#B5C5CC' VerticalAlignment='Top' Margin='0,6,18,0'/><Button x:Name='Help' Content='使用说明' Padding='11,6' VerticalAlignment='Top'/></StackPanel>
+    <StackPanel DockPanel.Dock='Left' Orientation='Horizontal'><Border Background='#B8EB7E' CornerRadius='5' Width='30' Height='30' VerticalAlignment='Top'><TextBlock Text='S' Foreground='#15251B' FontSize='20' FontWeight='Bold' HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><TextBlock Text='SQUAD TOOLS' FontWeight='SemiBold' FontSize='16' Margin='12,4,22,0'/><Button x:Name='MortarTab' Content='迫击炮' Background='#37583F' Padding='16,7' VerticalAlignment='Top' Margin='0,0,8,0'/><Button x:Name='ServerTab' Content='服务器列表' Padding='16,7' VerticalAlignment='Top'/></StackPanel>
+    <StackPanel DockPanel.Dock='Right' Orientation='Horizontal'><Border Background='#172D24' CornerRadius='12' Padding='12,5' VerticalAlignment='Top' Margin='0,0,18,0'><TextBlock x:Name='ModeBadge' Text='●  离线可用' Foreground='#B8EB7E' FontSize='11'/></Border><CheckBox x:Name='Pin' Content='窗口置顶' Foreground='#B5C5CC' VerticalAlignment='Top' Margin='0,6,18,0'/><Button x:Name='Help' Content='使用说明' Padding='11,6' VerticalAlignment='Top'/></StackPanel>
   </DockPanel>
-  <StackPanel Grid.Row='1'><TextBlock Text='迫击炮计算器' FontSize='27' FontWeight='SemiBold'/><TextBlock Text='标记炮位与目标，计算方位、密位与飞行时间。' Foreground='#8298A8' Margin='0,7,0,0' FontSize='12'/></StackPanel>
-  <Grid Grid.Row='2'>
+  <StackPanel x:Name='MortarHeading' Grid.Row='1'><TextBlock Text='迫击炮计算器' FontSize='27' FontWeight='SemiBold'/><TextBlock Text='标记炮位与目标，计算方位、密位与飞行时间。' Foreground='#8298A8' Margin='0,7,0,0' FontSize='12'/></StackPanel>
+  <Grid x:Name='MortarBody' Grid.Row='2'>
     <Grid.ColumnDefinitions><ColumnDefinition Width='300'/><ColumnDefinition Width='18'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
     <Border Background='#14212C' BorderBrush='#283B49' BorderThickness='1' CornerRadius='8' Padding='20,17'>
       <ScrollViewer VerticalScrollBarVisibility='Auto' HorizontalScrollBarVisibility='Disabled'>
@@ -556,7 +590,8 @@ namespace SquadTools
       </Grid>
     </Border>
   </Grid>
-  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  本地版 0.2.3' Foreground='#607B8E' FontSize='10'/><TextBlock Text='全官方地图 · 本地地形高程 · 无网络请求' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
+  <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
+  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  0.3.0 预览版' Foreground='#607B8E' FontSize='10'/><TextBlock Text='迫击炮离线可用 · 服务器按需联网' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
 </Grid>";
     }
 
@@ -567,7 +602,18 @@ namespace SquadTools
         {
             try
             {
-                var application = new Application(); var window = new MainWindow(args.Length == 2 && args[0] == "--smoke-test");
+                if (args.Length == 3 && args[0] == "--join-server") {
+                    // A GUI subsystem process has no console code page to change; write UTF-8 to the redirected pipe directly.
+                    Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
+                    return SteamJoinBridge.Run(args[1], args[2]);
+                }
+                if (args.Length == 2 && args[0] == "--probe-servers") return ServerDiagnostics.Probe(args[1]);
+                bool serverSmoke = args.Length >= 2 && args[0] == "--server-smoke-test";
+                var application = new Application(); var window = new MainWindow(serverSmoke || (args.Length == 2 && args[0] == "--smoke-test"));
+                if (serverSmoke) {
+                    string path = Path.GetFullPath(args[1]);
+                    window.Loaded += delegate { window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(delegate { try { window.ServerSmokeTest(path, ServerDiagnostics.SmokeSample(args.Length == 3 ? args[2] : null)); } catch (Exception ex) { File.WriteAllText(Path.ChangeExtension(path, ".txt"), ex.ToString()); Environment.ExitCode = 1; } finally { window.Close(); } })); };
+                }
                 if (args.Length == 2 && args[0] == "--smoke-test")
                 {
                     string path = Path.GetFullPath(args[1]);
@@ -575,7 +621,10 @@ namespace SquadTools
                 }
                 application.Run(window); return Environment.ExitCode;
             }
-            catch (Exception ex) { MessageBox.Show("软件启动失败：" + ex.Message, "Squad Tools"); return 1; }
+            catch (Exception ex) {
+                if (args.Length > 0 && args[0] == "--join-server") { try { Console.WriteLine("SQUADTOOLS_JOIN:ERROR:加入组件无法启动，请检查软件文件是否齐全。"); } catch (Exception) { } return 1; }
+                MessageBox.Show("软件启动失败：" + ex.Message, "Squad Tools"); return 1;
+            }
         }
     }
 }

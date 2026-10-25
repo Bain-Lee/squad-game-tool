@@ -1,16 +1,35 @@
-# Squad Tools · 本地迫击炮计算器
+# Squad Tools · 迫击炮与服务器列表
 
-面向游戏 **Squad / 战术小队** 的中文 Windows 桌面软件（0.2.3）。内置离线地图和地形高程，独立本地计算，无需打开网页、登录账户或启动后台服务。
+面向游戏 **Squad / 战术小队** 的中文 Windows x64 桌面软件（0.3.0 预览版）。迫击炮计算器内置离线地图和地形高程；新增独立服务器页面，按需联网查询、核对人数并收藏服务器。两个页面在同一窗口切换，保留炮位和目标。
 
 ## 直接使用
 
-双击 `dist/SquadTools.exe`，或解压 `SquadTools-portable.zip` 后运行其中的 `SquadTools.exe`。本机已有 .NET Framework 4.8 足够运行，**本轮没有安装任何环境或依赖**。
+双击 `dist/SquadTools.exe`，或解压 `SquadTools-portable.zip` 后运行其中的 `SquadTools.exe`。需要 Windows x64 和 .NET Framework 4.8。本轮没有安装系统软件；项目内增加了已校验的 Steamworks.NET 组件，用于实验性加入入口。
 
-如果移动软件，请复制整个 `dist` 文件夹到可写目录，尤其要保留 EXE 旁的 **`maps` 文件夹**；同时保留 `README.md`、`LICENSE` 和 `third_party`。只复制 EXE 会缺少地图资源。完整便携包中的地图选择、图片显示和高差计算均可离线使用。
+如果移动软件，请复制整个 `dist` 文件夹到可写目录，保留 EXE 旁的 **`maps` 文件夹、`Steamworks.NET.dll` 和 `steam_api64.dll`**，以及 `README.md`、`LICENSE` 和 `third_party`。完整便携包中的地图选择、图片显示和高差计算均可离线使用。
 
 软件关闭时把坐标、高度、选中地图、高程模式和自定义地图边长存到软件旁的 `data/settings.xml`；导入图片存为 `data/custom-map.png`。不会修改系统设置、注册表、启动项或游戏文件。
 
-## 已实现
+服务器收藏单独保存到 `data/server-favorites.xml`。普通使用不保存 EOS token、玩家标识或服务器历史快照。便携包排除本机 `data` 设置。
+
+## 服务器列表（预览）
+
+- 点击顶部“服务器列表”才查询 EOS；停留时每 60 秒刷新，离开时取消当前查询并暂停自动刷新。
+- 支持按名称、地图、模式和 IP 搜索，按许可服 / 自定义 / Fireteam 分类，收藏与筛选服务器。
+- 分别展示服务器上报人数、EOS 登记人数、可见成员计数、普通与预留排队人数。失败或无法核验显示未知，不改成 0 人。
+- 默认折叠相同公网连接地址和游戏端口的记录，可取消折叠查看。占位地址、内网地址、同 IP 不同端口不会因此误合并；折叠不代表已确认哪条是原服。
+- 默认在刷新后核验当前筛选结果中人数最多的前 10 台，也可单独核验所选服务器。连续显著差异会提示；“隐藏持续人数差异”需要自行勾选，规则仍需更多现场样本校准。
+- “加入（实验性）”通过 Steam 大厅入口尝试连接，需要 Steam 已启动且账号拥有 Squad。已实现入口与失败提示，**尚未验证当前游戏内成功进入目标服务器**；发起请求不代表进服成功。
+
+2026-10-25 已使用正式程序验证 EOS 列表查询及前 10 台可见成员查询；该结果不等于验证了所有服务器真实人数，也不等于识别了所有阴兵或冒牌服务器。实现、验证范围与限制详见 [docs/SERVER_BROWSER.md](docs/SERVER_BROWSER.md)。
+
+## Git 版本
+
+迫击炮开发基线：标签 `mortar-v0.2.3`，提交 `30f1d1b593ada59a53633c820b3327309d3950aa`。服务器工具在 `codex/server-browser` 分支开发。当前仓库未配置远程地址，属于本地 Git 版本管理。
+
+原迫击炮便携包另外保留在 `build/releases/SquadTools-mortar-v0.2.3.zip`（本机备份，未纳入 Git）。Git 不包含地图大文件；恢复旧版本时仍需保留地图资源或按下文重新取得。
+
+## 迫击炮功能
 
 - 标准部署式迫击炮的方位角、密位、水平距离、地面高差和理论飞行时间。默认高抛；仅低抛可用时明确显示低抛。
 - **26 张离线地图可选**：截至本次核实的 25 张当前官方地图（23 张战斗地图，加 Jensen's Range、Pacific Proving Grounds 两张训练场），另附 Belaya Pass 旧版底图。当前范围不含模组地图。
@@ -84,10 +103,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Test
 
 详细环境盘点见 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)，网页与源码分析见 [docs/RESEARCH.md](docs/RESEARCH.md)，拖动优化的性能对比与验证范围见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
 
+生成便携包：`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package.ps1`。打包只使用构建产物，不包含本机设置和调试样本。普通 `build.ps1 -Test` 使用离线样本验证服务器逻辑，不联网、不初始化 Steam。
+
 ## 来源与许可
 
 功能参考 [Squad.ICU](https://squad.icu/)，游戏参数、算法研究和地图元数据参考 [sh4rkman/SquadCalc](https://github.com/sh4rkman/SquadCalc)，原作者 Maxime “sharkman” Boussard。核实源码版本 [`24828d6d3081c7ce52b10ef39ec86036ebf010b5`](https://github.com/sh4rkman/SquadCalc/tree/24828d6d3081c7ce52b10ef39ec86036ebf010b5)。地图图片与高程数据来自 SquadCalc 数据服务，取得日期为 2026-10-22；数据版本与文件校验记录在离线地图目录中。
 
 SquadCalc 使用自定义 **MIT License (Non-Commercial)**，仅限非商业用途，并要求保留署名与许可。原文随附于 `third_party/SquadCalc.LICENSE`，本项目按该非商业范围提供。
+
+EOS 协议参考 [GameDig](https://github.com/gamedig/node-gamedig)（MIT，许可随附于 `third_party/GameDig.LICENSE`）。Steam 加入组件为 [Steamworks.NET](https://github.com/rlabrecque/Steamworks.NET)，来源、版本和校验值见 `third_party/Steamworks.NET/SOURCE.md`。社区加入协议资料仅作为参考；没有复制缺少明确许可的示例源码。
 
 便携包包含为本地使用单独取得的游戏地图底图与高程素材；Git 仓库不跟踪这些图片文件。游戏素材权利归 Offworld Industries 等各自权利人所有，代码许可不授予这些素材的使用或分发权；重新发布软件或素材时应独立核实相应授权。来源和格式详见随附的 `maps/README.md`（源码中为 `assets/maps/README.md`）。
