@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -23,9 +24,16 @@ internal static class ServerTests
         } });
     }
     private static string List(params string[] rows) { return "{\"sessions\":[" + string.Join(",",rows) + "],\"count\":" + rows.Length + "}"; }
-    public static int Main()
+    public static int Main(string[] args)
     {
-        try { TestParsing(); TestFilters(); TestRosters(); TestEvidence(); TestJoin(); TestTransport().GetAwaiter().GetResult(); Console.WriteLine("PASS: " + assertions + " server assertions (parsing, incomplete results, dedup, conservative counts, time windows, filtering, protocol transport and join validation). No live services or Steam used."); return 0; }
+        if (args.Length == 2 && args[0] == "--fake-join") {
+            Console.OutputEncoding = new UTF8Encoding(false);
+            if (args[1] == "success") { Console.WriteLine("ignored diagnostic"); Console.WriteLine("SQUADTOOLS_JOIN:LAUNCHED"); return 0; }
+            if (args[1] == "error") { Console.WriteLine("SQUADTOOLS_JOIN:ERROR:测试错误"); return 1; }
+            if (args[1].StartsWith("keepalive:")) { File.WriteAllText(args[1].Substring(10), Process.GetCurrentProcess().Id.ToString()); Console.WriteLine("SQUADTOOLS_JOIN:LAUNCHED"); Thread.Sleep(30000); return 0; }
+            File.WriteAllText(args[1], Process.GetCurrentProcess().Id.ToString()); Thread.Sleep(30000); return 0;
+        }
+        try { TestParsing(); TestFilters(); TestRosters(); TestEvidence(); TestJoin(); TestTransport().GetAwaiter().GetResult(); TestHelper().GetAwaiter().GetResult(); Console.WriteLine("PASS: " + assertions + " server assertions (parsing, incomplete results, dedup, conservative counts, time windows, filtering, protocol transport and join helper lifecycle). No live services or Steam used."); return 0; }
         catch(Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static void TestParsing()
@@ -52,6 +60,12 @@ internal static class ServerTests
         Check(ServerData.PublicAddress("::ffff:203.0.113.5")=="203.0.113.5","mapped IPv4 normalized");
         var placeholders=ServerData.ParseServers(List(Row(A,7787,80).Replace("203.0.113.5","0.0.0.0"),Row(B,7787,70).Replace("203.0.113.5","0.0.0.0")),Now,1000);
         Check(ServerData.Filter(placeholders.Servers,"","全部",false,false,true,false).Count==2,"different wildcard-address sessions must not merge");
+        string dated = Row(A,7787,90).Replace("\"totalPlayers\"", "\"lastUpdated\":\"2026-10-25T04:59:00Z\",\"totalPlayers\"");
+        foreach (string untrusted in new[] { Row(C,7787,99), Row(C,7787,99).Replace("\"totalPlayers\"", "\"lastUpdated\":\"invalid\",\"totalPlayers\""), Row(C,7787,99).Replace("\"totalPlayers\"", "\"lastUpdated\":\"2099-01-01T00:00:00Z\",\"totalPlayers\"") }) {
+            var ranked = ServerData.ParseServers(List(dated, untrusted), Now, 1000);
+            Check(ServerData.Filter(ranked.Servers,"","全部",false,false,true,false)[0].SessionId==A,"unknown or future update time must not outrank known timestamp");
+            Check(ServerData.ParseServers(List(dated, untrusted.Replace(C,A)),Now,1000).Servers[0].Reported==90,"same-session duplicate with untrusted timestamp cannot replace dated record");
+        }
     }
     private static void TestFilters()
     {
@@ -103,14 +117,57 @@ internal static class ServerTests
         tracker.Prune(new[]{B}); tracker.Apply(server,new RosterCount{Count=60,Complete=true},Now.AddSeconds(430));
         Check(!server.PersistentMismatch,"pruned session does not inherit old evidence");
         server.Reported=null; tracker.Apply(server,new RosterCount{Count=60,Complete=true},Now.AddSeconds(460));
-        Check(!server.PersistentMismatch,"unknown report does not produce anomaly");
+        Check(!server.PersistentMismatch && server.CheckState.Contains("无法比较"),"unknown report cannot claim a matching count");
+        server.Reported=100; tracker.Apply(server,new RosterCount{Count=60,Complete=true},Now.AddSeconds(490));
+        server.Reported=90; tracker.Apply(server,new RosterCount{Count=60,Complete=true},Now.AddSeconds(520));
+        Check(!server.PersistentMismatch,"a changed report restarts discrepancy evidence");
+        tracker.Apply(server,new RosterCount{Count=60,Complete=true},Now.AddSeconds(550));
+        Check(server.PersistentMismatch,"two samples with unchanged report can establish mismatch");
+        tracker.Reset(A); tracker.Apply(server,new RosterCount{Count=60,Complete=true},Now.AddSeconds(580));
+        Check(!server.PersistentMismatch,"explicit invalidation removes old evidence");
     }
     private static void TestJoin()
     {
         Check(SteamJoinBridge.BuildId("v10.6.3.694944.3212")=="694944","network build from version");
-        foreach(string value in new[]{null,"v1","v10.6.3.694944.3212 --evil","v10.6.3.694944.3212\n","steam://bad"}) Check(SteamJoinBridge.BuildId(value)==null,"invalid build input");
+        foreach(string value in new[]{null,"v1","v10.6.3.694944.3212 --evil","v10.6.3.694944.3212\n","steam://bad","v10.6.3.１２３.3212","v10.6.3.12345678901.3212"}) Check(SteamJoinBridge.BuildId(value)==null,"invalid build input");
         foreach(string value in new[]{null,"",A+"\n",A+" & x","../../x",new string('g',32)}) Check(!ServerData.ValidSession(value),"invalid session input");
         Check(ServerData.ValidSession(A),"valid session input");
+    }
+    private static ProcessStartInfo FakeHelper(string mode)
+    {
+        return new ProcessStartInfo(System.Reflection.Assembly.GetExecutingAssembly().Location, "--fake-join \"" + mode + "\"") { UseShellExecute=false, CreateNoWindow=true, RedirectStandardOutput=true, StandardOutputEncoding=Encoding.UTF8 };
+    }
+    private static async Task TestHelper()
+    {
+        Check(await SteamJoinBridge.RunHelper(FakeHelper("success"),CancellationToken.None,5000)=="LAUNCHED","helper ignores diagnostics and reads success prefix");
+        Check(await SteamJoinBridge.RunHelper(FakeHelper("error"),CancellationToken.None,5000)=="ERROR:测试错误","helper preserves UTF8 error payload");
+        string launchedMarker=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"join-helper-"+Guid.NewGuid().ToString("N")+".txt");
+        using(var stop=new CancellationTokenSource()) {
+            Check(await SteamJoinBridge.RunHelper(FakeHelper("keepalive:"+launchedMarker),stop.Token,5000)=="LAUNCHED","live helper hands off successfully");
+            using(var process=Process.GetProcessById(int.Parse(File.ReadAllText(launchedMarker)))) {
+                try { stop.Cancel(); Check(!process.HasExited,"cancellation after hand-off preserves lobby lifetime"); }
+                finally { if(!process.HasExited) process.Kill(); process.WaitForExit(2000); }
+            }
+            File.Delete(launchedMarker);
+        }
+        foreach (bool cancel in new[]{false,true}) {
+            string marker=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"join-helper-"+Guid.NewGuid().ToString("N")+".txt");
+            using(var stop=new CancellationTokenSource()) {
+                var pending=SteamJoinBridge.RunHelper(FakeHelper(marker),stop.Token,cancel?10000:2000);
+                var watch=Stopwatch.StartNew();
+                while(!File.Exists(marker) && watch.ElapsedMilliseconds<1500) await Task.Delay(20);
+                Check(File.Exists(marker),"fake helper really started before termination test");
+                int pid=int.Parse(File.ReadAllText(marker));
+                if(cancel) stop.Cancel();
+                try { await pending; throw new Exception("Pending helper unexpectedly succeeded"); }
+                catch(OperationCanceledException) { Check(cancel,"explicit cancellation reported"); }
+                catch(IOException) { Check(!cancel,"timeout reported"); }
+                bool ended;
+                try { using(var process=Process.GetProcessById(pid)) ended=process.WaitForExit(2000); } catch(ArgumentException) { ended=true; }
+                Check(ended,"unfinished helper is terminated on cancellation or timeout");
+                File.Delete(marker);
+            }
+        }
     }
     private sealed class MockHttp : HttpMessageHandler
     {

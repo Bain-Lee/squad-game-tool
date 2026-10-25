@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using Steamworks;
 
 namespace SquadTools
@@ -13,8 +15,69 @@ namespace SquadTools
     {
         public static string BuildId(string version)
         {
-            var match = Regex.Match(version ?? "", "\\Av?\\d+\\.\\d+\\.\\d+\\.(\\d+)\\.\\d+\\z", RegexOptions.IgnoreCase);
+            var match = Regex.Match(version ?? "", "\\Av?[0-9]+\\.[0-9]+\\.[0-9]+\\.([0-9]{1,10})\\.[0-9]+\\z", RegexOptions.IgnoreCase);
             return match.Success ? match.Groups[1].Value : null;
+        }
+
+        public static Task<string> Launch(ServerRecord server, string build, CancellationToken cancellation)
+        {
+            if (!ServerData.ValidSession(server.SessionId) || !Regex.IsMatch(build ?? "", "\\A[0-9]{1,10}\\z")) throw new ArgumentException("Invalid server join parameters.");
+            var start = new ProcessStartInfo(System.Reflection.Assembly.GetExecutingAssembly().Location, "--join-server " + server.SessionId + " " + build) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, StandardOutputEncoding = Encoding.UTF8, WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory };
+            return RunHelper(start, cancellation, 25000);
+        }
+
+        internal static async Task<string> RunHelper(ProcessStartInfo start, CancellationToken cancellation, int timeoutMs)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            using (var helper = Process.Start(start))
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation))
+            {
+                var read = ReadJoinResult(helper.StandardOutput);
+                bool launched = false;
+                var gate = new object();
+                // Cancellation must terminate preparation even if the WPF dispatcher is closing.
+                using (cancellation.Register(delegate { lock (gate) { if (!launched) StopHelper(helper); } })) {
+                    try {
+                        var deadline = Task.Delay(timeoutMs, timeout.Token);
+                        if (await Task.WhenAny(read, deadline).ConfigureAwait(false) != read) {
+                            cancellation.ThrowIfCancellationRequested();
+                            throw new IOException("Steam 响应超时。");
+                        }
+                        string result = await read.ConfigureAwait(false);
+                        lock (gate) {
+                            cancellation.ThrowIfCancellationRequested();
+                            launched = result == "LAUNCHED";
+                        }
+                        return result;
+                    }
+                    finally {
+                        timeout.Cancel();
+                        // A launched lobby must stay alive for the game's hand-off. All unfinished helpers are owned here.
+                        lock (gate) { if (!launched) StopHelper(helper); }
+                        ObserveFailure(read);
+                    }
+                }
+            }
+        }
+
+        private static void StopHelper(Process helper)
+        {
+            try { if (!helper.HasExited) helper.Kill(); }
+            catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { }
+        }
+
+        private static void ObserveFailure(Task task)
+        {
+            // Closing a cancelled helper's pipe may fault its outstanding read.
+            task.ContinueWith(t => t.Exception.Handle(ex => true), TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+        }
+
+        private static async Task<string> ReadJoinResult(StreamReader reader)
+        {
+            string line;
+            while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null) if (line.StartsWith("SQUADTOOLS_JOIN:", StringComparison.Ordinal)) return line.Substring(16);
+            return null;
         }
 
         // Runs only after an explicit Join click, in a short-lived separate process.

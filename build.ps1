@@ -53,6 +53,10 @@ if ($Test) {
     Copy-Item -LiteralPath (Join-Path $taskRoot 'third_party\Steamworks.NET\Steamworks.NET.dll') -Destination $taskBuild -Force
     & (Join-Path $taskBuild 'ServerTests.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Server tests failed.' }
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /platform:x64 /codepage:65001 ('/out:' + (Join-Path $taskBuild 'ServerBrowserTests.exe')) $taskRefs (Join-Path $taskRoot 'src\ServerModels.cs') (Join-Path $taskRoot 'src\EosClient.cs') (Join-Path $taskRoot 'src\SteamJoinBridge.cs') (Join-Path $taskRoot 'src\ServerBrowserView.cs') (Join-Path $taskRoot 'tests\ServerBrowserTests.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Server browser regression test compilation failed.' }
+    & (Join-Path $taskBuild 'ServerBrowserTests.exe')
+    if ($LASTEXITCODE -ne 0) { throw 'Server browser regression tests failed.' }
     $taskServerSmoke = Start-Process -FilePath (Join-Path $taskOutput 'SquadTools.exe') -ArgumentList @('--server-smoke-test', ('"' + (Join-Path $taskBuild 'server-preview.png') + '"')) -WindowStyle Hidden -Wait -PassThru
     if ($taskServerSmoke.ExitCode -ne 0) { throw 'Server desktop smoke test failed. See build\server-preview.txt.' }
     Get-Content -LiteralPath (Join-Path $taskBuild 'server-preview.txt')

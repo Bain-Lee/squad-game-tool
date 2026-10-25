@@ -103,7 +103,8 @@ namespace SquadTools
                 int port = Count(attr, "GAMESERVER_PORT_l") ?? 0;
                 if (port == 0) { string bound = Text(attr, "ADDRESSBOUND_s"); int index = bound.LastIndexOf(':'); if (index >= 0) int.TryParse(bound.Substring(index + 1), out port); }
                 if (port < 1 || port > 65535) port = 0;
-                DateTime updated; if (!DateTime.TryParse(Text(row, "lastUpdated"), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out updated)) updated = now;
+                DateTime updated;
+                if (!DateTime.TryParse(Text(row, "lastUpdated"), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out updated) || updated > now) updated = DateTime.MinValue;
                 var server = new ServerRecord {
                     SessionId = id, Name = Clean(Text(attr, "SERVERNAME_s"), 500), Map = Clean(Text(attr, "MAPNAME_s"), 180), Mode = Clean(Text(attr, "GAMEMODE_s"), 80),
                     Version = Clean(Text(attr, "GAMEVERSION_s"), 80), Address = address, Port = port, Licensed = Flag(attr, "LICENSEDSERVER_b"), Coop = Flag(attr, "COOPSERVER_b"), Password = Flag(attr, "PASSWORD_b"),
@@ -155,7 +156,7 @@ namespace SquadTools
 
     public sealed class CountEvidence
     {
-        private sealed class Sample { public DateTime Time; public int Streak; }
+        private sealed class Sample { public DateTime Time; public int Streak; public int Reported; }
         private readonly Dictionary<string, Sample> history = new Dictionary<string, Sample>();
         public void Apply(ServerRecord server, RosterCount roster, DateTime now)
         {
@@ -163,18 +164,20 @@ namespace SquadTools
             // A successful empty search may still mean hidden/unavailable presence, not an empty game server.
             if (!roster.Complete || roster.Count == 0) { server.Observed = null; server.CheckState = roster.Complete ? "未取得可见成员" : "核验结果不完整"; history.Remove(server.SessionId); return; }
             server.Observed = roster.Count;
+            if (!server.Reported.HasValue) { history.Remove(server.SessionId); server.CheckState = "缺少上报人数 · 无法比较"; return; }
             bool mismatch = server.Reported.HasValue && server.Reported.Value - roster.Count >= Math.Max(10, (int)Math.Ceiling(server.Reported.Value * 0.2));
             if (!mismatch) { history.Remove(server.SessionId); server.CheckState = "未见明显差异"; return; }
             Sample previous; int streak = 1;
-            if (history.TryGetValue(server.SessionId, out previous)) {
+            if (history.TryGetValue(server.SessionId, out previous) && previous.Reported == server.Reported.Value) {
                 var age = (now - previous.Time).TotalSeconds;
                 if (age >= 20 && age <= 180) streak = previous.Streak + 1;
                 else if (age >= 0 && age < 20) { server.PersistentMismatch = previous.Streak >= 2; server.CheckState = server.PersistentMismatch ? "持续人数差异" : "人数有差异 · 待复核"; return; }
             }
-            history[server.SessionId] = new Sample { Time = now, Streak = streak };
+            history[server.SessionId] = new Sample { Time = now, Streak = streak, Reported = server.Reported.Value };
             server.PersistentMismatch = streak >= 2;
             server.CheckState = server.PersistentMismatch ? "持续人数差异" : "人数有差异 · 待复核";
         }
+        public void Reset(string sessionId) { history.Remove(sessionId); }
         public void Prune(IEnumerable<string> active) { var keep = new HashSet<string>(active); foreach (var id in history.Keys.Where(k => !keep.Contains(k)).ToArray()) history.Remove(id); }
     }
 }
