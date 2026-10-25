@@ -373,7 +373,7 @@ namespace SquadTools
             MessageBox.Show(this,
                 "1. 在左侧选择游戏地图。地图图片和尺寸已本地保存；切换后使用该地图的实际宽高。也可选择自定义图片 / 空白网格。\n\n" +
                 "2. 填写游戏网格坐标，如 D05-5-5。每个大格 300 米，九宫格顺序与数字小键盘一致。按最细小格中心计算。\n\n" +
-                "地图左键放目标，右键放炮位；滚轮缩放，中键拖动。地图点击保留实际位置，不吸附到网格中心；框内网格仅作参考，悬停可查看实际米制坐标。\n\n" +
+                "地图左键放目标，双击右键放炮位；按住右键移动鼠标可拖动地图，滚轮缩放，也支持中键拖动。右键单击不放置标记，双击的第二次松开时设置炮位；拖动不会设置炮位。地图点击保留实际位置，不吸附到网格中心；框内网格仅作参考，悬停可查看实际米制坐标。\n\n" +
                 "3. 默认自动读取本地地形高程，可关闭后手动输入高度。地形数据不含桥梁、房顶等附加高度；目标更高时高差为正。软件另计炮口高 1 米。\n\n" +
                 "4. 方位 0° 为北、90° 为东。密位采用 6400/圈；标准迫击炮可用角 800–1580 mil。飞行时间为理论估算。\n\n" +
                 "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
@@ -550,13 +550,13 @@ namespace SquadTools
         <DockPanel Margin='16,0' LastChildFill='False'><StackPanel DockPanel.Dock='Left' Orientation='Horizontal' VerticalAlignment='Center'><StackPanel Width='230' Margin='0,0,16,0'><TextBlock x:Name='MapName' Text='离线坐标网格' FontWeight='SemiBold' TextTrimming='CharacterEllipsis'/><TextBlock x:Name='MapInfo' Foreground='#8196A5' FontSize='10' Margin='0,4,0,0'/></StackPanel><RadioButton x:Name='PlaceTarget' Content='放目标' IsChecked='True' GroupName='Mode'/><RadioButton x:Name='PlaceMortar' Content='放炮位' GroupName='Mode'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ZoomOut' Content='−' Padding='11,5' Margin='0,0,5,0'/><Button x:Name='ZoomIn' Content='+' Padding='11,5' Margin='0,0,5,0'/><Button x:Name='ResetView' Content='全图' Padding='10,5'/></StackPanel></DockPanel>
         <Border Grid.Row='1' x:Name='MapHost' BorderBrush='#283B49' BorderThickness='0,1'/>
         <Grid Grid.Row='2' Margin='16,10'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions>
-          <TextBlock Text='左键目标 · 右键炮位 · 滚轮缩放 · 中键拖动' Foreground='#728A9B' FontSize='11' VerticalAlignment='Center'/>
+          <TextBlock Text='左键目标 · 右键拖动 · 右键双击炮位 · 滚轮缩放' TextWrapping='Wrap' Margin='0,0,12,0' Foreground='#728A9B' FontSize='11' VerticalAlignment='Center'/>
           <StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ClearMap' Content='空白网格' Margin='0,0,8,0'/><Button x:Name='ImportMap' Content='导入自定义图片'/></StackPanel>
         </Grid>
       </Grid>
     </Border>
   </Grid>
-  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  本地版 0.2.2' Foreground='#607B8E' FontSize='10'/><TextBlock Text='全官方地图 · 本地地形高程 · 无网络请求' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
+  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  本地版 0.2.3' Foreground='#607B8E' FontSize='10'/><TextBlock Text='全官方地图 · 本地地形高程 · 无网络请求' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
 </Grid>";
     }
 

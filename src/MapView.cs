@@ -23,6 +23,8 @@ namespace SquadTools
         private Point dragStart;
         private Vector panStart;
         private bool dragging, pendingViewport, listeningForFrame;
+        private MouseButton dragButton = MouseButton.Middle;
+        private bool dragMoved, rightClickPending, weaponDoubleClick;
         private readonly Typeface font = new Typeface("Microsoft YaHei UI");
         private readonly DrawingVisual scene = new DrawingVisual();
         private readonly DrawingVisual columnLabels = new DrawingVisual();
@@ -81,7 +83,7 @@ namespace SquadTools
         private Vec2 World(Point p) { Point o = Origin; return new Vec2((p.X - o.X) / Scale, (p.Y - o.Y) / Scale); }
         private static Point Local(Vec2 p, double scale) { return new Point(p.X * scale, p.Y * scale); }
         public void ResetView() { EndDrag(); zoom = 1; pan = new Vector(); InvalidateVisual(); }
-        public void ZoomBy(double factor) { zoom = Math.Max(0.7, Math.Min(12, zoom * factor)); InvalidateVisual(); }
+        public void ZoomBy(double factor) { rightClickPending = weaponDoubleClick = false; zoom = Math.Max(0.7, Math.Min(12, zoom * factor)); InvalidateVisual(); }
 
         private void OnWheel(object sender, MouseWheelEventArgs e)
         {
@@ -91,34 +93,68 @@ namespace SquadTools
 
         private void ZoomAt(Point p, double factor)
         {
+            rightClickPending = weaponDoubleClick = false;
             Vec2 before = World(p);
             zoom = Math.Max(0.7, Math.Min(12, zoom * factor));
             pan += p - Screen(before);
-            if (dragging) { dragStart = p; panStart = pan; }
+            if (dragging) { dragStart = p; panStart = pan; BeginPan(); }
             InvalidateVisual();
         }
 
         private void OnDown(object sender, MouseButtonEventArgs e)
         {
             Focus();
-            if (e.ChangedButton == MouseButton.Middle)
+            e.Handled = HandlePointerDown(e.ChangedButton, e.GetPosition(this), e.ClickCount);
+        }
+
+        private bool HandlePointerDown(MouseButton button, Point position, int clickCount)
+        {
+            // Another button must not place a marker or replace the active drag.
+            if (dragging) return true;
+            if (button == MouseButton.Right || button == MouseButton.Middle)
             {
-                dragging = true; dragStart = e.GetPosition(this); panStart = pan;
+                // WPF supplies the system double-click time and distance checks.
+                // Also require a completed, unmoved first click: drags count as
+                // presses to WPF, but must never count as our first click.
+                weaponDoubleClick = button == MouseButton.Right && clickCount > 1 && rightClickPending;
+                rightClickPending = false;
+                dragging = true; dragMoved = false; dragButton = button;
+                dragStart = position; panStart = pan;
                 CaptureMouse(); Cursor = Cursors.SizeAll;
-                RenderOptions.SetBitmapScalingMode(scene, BitmapScalingMode.LowQuality);
-                e.Handled = true; return;
+                return true;
             }
-            if (e.ChangedButton != MouseButton.Left && e.ChangedButton != MouseButton.Right) return;
-            Vec2 p = World(e.GetPosition(this));
-            if (p.X < 0 || p.Y < 0 || p.X >= WorldSize || p.Y >= WorldHeight) return;
-            if (PointPlaced != null) PointPlaced(p, e.ChangedButton == MouseButton.Right || PlaceWeapon);
-            e.Handled = true;
+            rightClickPending = false;
+            return button == MouseButton.Left && PlaceAt(position, PlaceWeapon);
+        }
+
+        private bool PlaceAt(Point position, bool weapon)
+        {
+            Vec2 p = World(position);
+            if (p.X < 0 || p.Y < 0 || p.X >= WorldSize || p.Y >= WorldHeight) return false;
+            if (PointPlaced != null) PointPlaced(p, weapon);
+            return true;
         }
 
         private void OnMove(object sender, MouseEventArgs e)
         {
+            MoveDrag(e.GetPosition(this));
+        }
+
+        private void BeginPan()
+        {
+            if (!dragMoved) RenderOptions.SetBitmapScalingMode(scene, BitmapScalingMode.LowQuality);
+            dragMoved = true; weaponDoubleClick = false;
+        }
+
+        private void MoveDrag(Point position)
+        {
             if (!dragging) return;
-            pan = panStart + e.GetPosition(this) - dragStart;
+            Vector delta = position - dragStart;
+            // Ignore click jitter so a double-click keeps the map stationary.
+            if (!dragMoved && Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            BeginPan();
+            pan = panStart + delta;
             pendingViewport = true;
             // Several mouse events can arrive within a display frame. Commit the newest
             // position once, without invalidating/rebuilding the map or its text.
@@ -127,13 +163,21 @@ namespace SquadTools
 
         private void OnUp(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton != MouseButton.Middle) return;
-            if (dragging)
-            {
-                pan = panStart + e.GetPosition(this) - dragStart;
-                pendingViewport = true;
-            }
+            e.Handled = HandlePointerUp(e.ChangedButton, e.GetPosition(this));
+        }
+
+        private bool HandlePointerUp(MouseButton button, Point position)
+        {
+            if (!dragging || button != dragButton) return false;
+            MoveDrag(position);
+            bool placeWeapon = weaponDoubleClick && !dragMoved;
+            bool firstRightClick = button == MouseButton.Right && !dragMoved && !placeWeapon;
+            // Release capture and commit any pending pan before notifying the UI.
+            // LostMouseCapture also clears click state, so restore it afterwards.
             EndDrag();
+            rightClickPending = firstRightClick;
+            if (placeWeapon) PlaceAt(position, true);
+            return true;
         }
 
         private void OnFrame(object sender, EventArgs e)
@@ -145,6 +189,7 @@ namespace SquadTools
         private void EndDrag()
         {
             dragging = false;
+            dragMoved = rightClickPending = weaponDoubleClick = false;
             if (listeningForFrame) { CompositionTarget.Rendering -= OnFrame; listeningForFrame = false; }
             if (pendingViewport) { pendingViewport = false; UpdateViewport(); }
             RenderOptions.SetBitmapScalingMode(scene, BitmapScalingMode.HighQuality);
