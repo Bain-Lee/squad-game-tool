@@ -105,6 +105,7 @@ namespace SquadTools
     {
         public RaasPoint Point;
         public string Label, Caption, Color;
+        public string FactionId;
         public bool Clickable;
         public int ConfirmedStep;
         public bool SelectedMain;

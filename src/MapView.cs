@@ -138,12 +138,17 @@ namespace SquadTools
 
         private void ClickPrediction(Point position)
         {
-            RaasMarker closest=null; double best=20*20;
+            RaasMarker closest=null; double best=double.PositiveInfinity;
             foreach(var marker in predictionMarkers.Where(m=>m.Clickable)) {
                 Point p=Screen(marker.Point.Position); double distance=(p-position).LengthSquared;
-                if(distance<=best) { closest=marker; best=distance; }
+                if(PredictionHit(marker,position) && distance<=best) { closest=marker; best=distance; }
             }
             if(closest!=null && PredictionPointClicked!=null) PredictionPointClicked(closest.Point);
+        }
+        private bool PredictionHit(RaasMarker marker,Point position)
+        {
+            Vector delta=Screen(marker.Point.Position)-position;
+            return marker.Point.IsMain?Math.Abs(delta.X)<=21 && Math.Abs(delta.Y)<=15:delta.LengthSquared<=400;
         }
 
         private bool PlaceAt(Point position, bool weapon)
@@ -159,8 +164,8 @@ namespace SquadTools
             MoveDrag(e.GetPosition(this));
             if(PredictionMode && !dragging) {
                 Point cursor=e.GetPosition(this);
-                var marker=predictionMarkers.OrderBy(m=>(Screen(m.Point.Position)-cursor).LengthSquared).FirstOrDefault();
-                ToolTip=marker!=null && (Screen(marker.Point.Position)-cursor).LengthSquared<=400?marker.Caption+"\n顺位 "+marker.Label:null;
+                var marker=predictionMarkers.Where(m=>PredictionHit(m,cursor)).OrderBy(m=>(Screen(m.Point.Position)-cursor).LengthSquared).FirstOrDefault();
+                ToolTip=marker!=null?marker.Caption+"\n顺位 "+marker.Label:null;
             } else ToolTip=null;
         }
 
@@ -374,9 +379,15 @@ namespace SquadTools
             var path=confirmed.Select(m=>m.Point).ToList(); if(main!=null) path.Insert(0,main.Point);
             for(int i=1;i<path.Count;i++) dc.DrawLine(Line("#EEF5FF",2),Local(path[i-1].Position,scale),Local(path[i].Position,scale));
             var ordered=predictionMarkers.OrderBy(m=>m.Clickable?1:0).ToList();
-            var occupied=ordered.Select(m=> { var p=Local(m.Point.Position,scale); return new Rect(p.X-18,p.Y-18,36,36); }).ToList();
+            var occupied=ordered.Select(m=> { var p=Local(m.Point.Position,scale); return new Rect(p.X-22,p.Y-18,44,36); }).ToList();
             foreach(var marker in ordered) {
                 Point p=Local(marker.Point.Position,scale); string color=marker.Color;
+                if(marker.Point.IsMain) {
+                    var rect=new Rect(p.X-19,p.Y-13,38,26);
+                    dc.DrawRoundedRectangle(Brush("#EC101B24"),Line(color,marker.SelectedMain?3:1.5),new Rect(p.X-21,p.Y-15,42,30),3,3);
+                    dc.DrawImage(FactionCatalog.Image(marker.FactionId),rect);
+                    continue;
+                }
                 double radius=marker.Point.IsMain?16:14;
                 dc.DrawEllipse(Brush("#EC101B24"),Line(color,2.5),p,radius,radius);
                 Text(dc,marker.Label,p.X-(marker.Label.Length>1?10:4),p.Y-8,12,color);
@@ -387,7 +398,7 @@ namespace SquadTools
                 string[] lines=marker.Caption.Split('\n');
                 string name=lines[0].Length>28?lines[0].Substring(0,27)+"…":lines[0];
                 double width=Math.Max(62,name.Sum(c=>c>127?10:5.8)+10),height=lines.Length>1?31:17;
-                var choices=new[]{new Rect(p.X-width/2,p.Y-height-21,width,height),new Rect(p.X-width/2,p.Y+21,width,height),new Rect(p.X+22,p.Y-height/2,width,height),new Rect(p.X-width-22,p.Y-height/2,width,height),new Rect(p.X-width/2,p.Y-height-45,width,height)};
+                var choices=new[]{new Rect(p.X-width/2,p.Y-height-21,width,height),new Rect(p.X-width/2,p.Y+21,width,height),new Rect(p.X+25,p.Y-height/2,width,height),new Rect(p.X-width-25,p.Y-height/2,width,height),new Rect(p.X-width/2,p.Y-height-45,width,height)};
                 var bounds=new Rect(0,0,WorldSize*scale,WorldHeight*scale);
                 Rect? chosen=null;
                 foreach(var rect in choices) if(bounds.Contains(rect) && !occupied.Any(other=>other.IntersectsWith(rect))) { chosen=rect; break; }

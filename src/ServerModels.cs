@@ -15,6 +15,11 @@ namespace SquadTools
         public string Name { get; set; }
         public string Map { get; set; }
         public string Mode { get; set; }
+        public string TeamOne { get; set; }
+        public string TeamTwo { get; set; }
+        public string Team1Faction { get { return FactionCatalog.Id(TeamOne); } }
+        public string Team2Faction { get { return FactionCatalog.Id(TeamTwo); } }
+        public string TeamsText { get { return FactionCatalog.Name(TeamOne) + " vs " + FactionCatalog.Name(TeamTwo); } }
         public string Version { get; set; }
         public string Address { get; set; }
         public int Port { get; set; }
@@ -107,6 +112,7 @@ namespace SquadTools
                 if (!DateTime.TryParse(Text(row, "lastUpdated"), CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out updated) || updated > now) updated = DateTime.MinValue;
                 var server = new ServerRecord {
                     SessionId = id, Name = Clean(Text(attr, "SERVERNAME_s"), 500), Map = Clean(Text(attr, "MAPNAME_s"), 180), Mode = Clean(Text(attr, "GAMEMODE_s"), 80),
+                    TeamOne = Clean(Text(attr,"TEAMONE_s"),180), TeamTwo = Clean(Text(attr,"TEAMTWO_s"),180),
                     Version = Clean(Text(attr, "GAMEVERSION_s"), 80), Address = address, Port = port, Licensed = Flag(attr, "LICENSEDSERVER_b"), Coop = Flag(attr, "COOPSERVER_b"), Password = Flag(attr, "PASSWORD_b"),
                     Reported = Count(attr, "PLAYERCOUNT_l"), Registered = Count(row, "totalPlayers"), Capacity = Count(settings, "maxPublicPlayers"), Queue = Count(attr, "PUBLICQUEUE_l"), ReservedQueue = Count(attr, "RESERVEDQUEUE_l"),
                     RetrievedAt = now, UpdatedAt = updated, DuplicateCount = 1

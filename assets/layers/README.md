@@ -2,7 +2,7 @@
 
 本目录是按图层保存的离线数据，覆盖当前内置的 23 张官方战斗地图和 39 个 RAAS 图层。Jensen's Range、Pacific Proving Grounds 没有 RAAS，旧版 Belaya 的图层接口返回 404；这些情况在目录中明确标记。
 
-来源为 SquadCalc 的公开 `/api/get/layers?map=...` 与 `/api/get/layer?name=...` 接口。取得日期见 catalog.json 的 fetchedAt，底图原点元数据固定到 sourceCommit。各图层只保留双方主基地、候选旗点坐标、唯一标识、点簇及有向链接；未打包载具生成点等无关数据。
+来源为 SquadCalc 的公开 `/api/get/layers?map=...` 与 `/api/get/layer?name=...` 接口。取得日期见 catalog.json 的 fetchedAt，底图原点元数据固定到 sourceCommit。各图层只保留双方主基地、候选旗点坐标、唯一标识、点簇、有向链接及双方默认阵营；未打包载具生成点等无关数据。默认阵营仅用于手动猜点，不能当作服务器当前对阵。
 
 坐标先由 SDK 厘米换算为米，再减去与地图素材一致的 SDK minimap.corner0 原点。catalog.json 将完整图层标识映射到基础地图，不能把 RAAS v1/v2/v3 或 CL 变体混用。
 

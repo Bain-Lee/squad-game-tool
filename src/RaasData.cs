@@ -19,7 +19,7 @@ namespace SquadTools
     public sealed class RaasLink { public string From, To; }
     public sealed class RaasLayer
     {
-        public string MapId, RawName, SourceCommit;
+        public string MapId, RawName, SourceCommit, Team1, Team2;
         public List<RaasPoint> Mains = new List<RaasPoint>(), Flags = new List<RaasPoint>();
         public List<RaasCluster> Clusters = new List<RaasCluster>();
         public List<RaasLink> Links = new List<RaasLink>();
@@ -69,6 +69,7 @@ namespace SquadTools
             rawName = map.Layers.First(l => string.Equals(l.RawName,rawName,StringComparison.OrdinalIgnoreCase)).RawName;
             var data = Read(Path.Combine(directory,rawName+".json")); Schema(data);
             var layer = new RaasLayer { MapId = Text(data,"mapId"), RawName = Text(data,"rawName"), SourceCommit = Text(data,"sourceCommit") };
+            layer.Team1=FactionCatalog.Id(ServerData.Text(data,"team1")); layer.Team2=FactionCatalog.Id(ServerData.Text(data,"team2"));
             if (layer.MapId != map.Id || layer.RawName != rawName || layer.SourceCommit != SourceCommit || !new[] {"RAAS","RVAAS"}.Contains(Text(data,"mode"))) throw new FormatException("RAAS 图层与目录不一致。");
             var nodes = new HashSet<string>(StringComparer.Ordinal); var ids = new HashSet<string>(StringComparer.Ordinal);
             foreach (var entry in Rows(data,"mains")) {

@@ -67,6 +67,7 @@ await pool(jobs,async({map,layer})=>{
   const links=data.capturePoints?.lanes?.links?.length?data.capturePoints.lanes.links:data.capturePoints?.clusters?.links;
   const objects=Object.values(data.objectives||{});
   const normalized={schema:1,mapId:map.id,rawName:data.rawName,mode:data.gamemode,sourceCommit,fetchedAt,originX:map.origin[0],originY:map.origin[1],
+    team1:data.teamConfigs?.team1?.defaultFaction||'',team2:data.teamConfigs?.team2?.defaultFaction||'',
     mains:objects.filter(o=>o.name==='Main').map(o=>({id:o.objectDisplayName,name:o.objectDisplayName,...location(o,map)})),
     clusters:objects.filter(o=>Array.isArray(o.points)).map(o=>({id:o.name,points:o.points.map(p=>({id:p.objectName,name:p.name,...location(p,map)}))})),
     links:(links||[]).map(l=>({from:l.nodeA,to:l.nodeB}))};

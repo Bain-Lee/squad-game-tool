@@ -11,7 +11,8 @@ $taskOutput = Join-Path $taskRoot 'dist'
 New-Item -ItemType Directory -Path $taskOutput -Force | Out-Null
 $taskRefs = @('System.dll','System.Core.dll','System.Xml.dll','System.Xaml.dll','System.Net.Http.dll','System.Web.Extensions.dll') | ForEach-Object { '/reference:' + (Join-Path $taskFramework $_) }
 $taskRefs += @('PresentationCore.dll','PresentationFramework.dll','WindowsBase.dll') | ForEach-Object { '/reference:' + (Join-Path (Join-Path $taskFramework 'WPF') $_) }
-$taskSources = @('src\Ballistics.cs','src\WeaponCatalog.cs','src\MapCatalog.cs','src\MapView.cs','src\Main.cs','src\ServerModels.cs','src\EosClient.cs','src\ServerBrowserView.cs','src\ServerDiagnostics.cs','src\RaasData.cs','src\RaasPrediction.cs','src\RaasView.cs') | ForEach-Object { Join-Path $taskRoot $_ }
+$taskSources = @('src\Ballistics.cs','src\WeaponCatalog.cs','src\MapCatalog.cs','src\MapView.cs','src\Main.cs','src\ServerModels.cs','src\EosClient.cs','src\ServerBrowserView.cs','src\ServerDiagnostics.cs','src\RaasData.cs','src\RaasPrediction.cs','src\RaasView.cs','src\FactionCatalog.cs') | ForEach-Object { Join-Path $taskRoot $_ }
+$taskFactionSource = Join-Path $taskRoot 'src\FactionCatalog.cs'
 $taskMapRoot = Join-Path $taskRoot 'assets\maps'
 if (-not (Test-Path -LiteralPath (Join-Path $taskMapRoot 'catalog.xml'))) { throw 'Map catalog missing. Run scripts\fetch-maps.ps1 with an existing Python/Pillow environment first.' }
 [xml]$taskMapCatalog = Get-Content -LiteralPath (Join-Path $taskMapRoot 'catalog.xml') -Raw -Encoding UTF8
@@ -49,18 +50,18 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0) { throw 'Map test compilation failed.' }
     & (Join-Path $taskBuild 'MapTests.exe') (Join-Path $taskOutput 'maps')
     if ($LASTEXITCODE -ne 0) { throw 'Map tests failed.' }
-    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'MapRenderTests.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\WeaponCatalog.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'src\RaasData.cs') (Join-Path $taskRoot 'src\RaasPrediction.cs') (Join-Path $taskRoot 'src\ServerModels.cs') (Join-Path $taskRoot 'tests\MapRenderTests.cs')
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'MapRenderTests.exe')) $taskRefs $taskFactionSource (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\WeaponCatalog.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'src\RaasData.cs') (Join-Path $taskRoot 'src\RaasPrediction.cs') (Join-Path $taskRoot 'src\ServerModels.cs') (Join-Path $taskRoot 'tests\MapRenderTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Map render test compilation failed.' }
     & (Join-Path $taskBuild 'MapRenderTests.exe') (Join-Path $taskMapRoot 'images\blackcoast.jpg') (Join-Path $taskBuild 'map-render-preview.png')
     if ($LASTEXITCODE -ne 0) { throw 'Map render tests failed.' }
     $taskSmoke = Start-Process -FilePath (Join-Path $taskOutput 'SquadTools.exe') -ArgumentList @('--smoke-test', ('"' + (Join-Path $taskBuild 'desktop-preview.png') + '"')) -WindowStyle Hidden -Wait -PassThru
     if ($taskSmoke.ExitCode -ne 0) { throw 'Desktop smoke test failed. See build\desktop-preview.txt.' }
     Get-Content -LiteralPath (Join-Path $taskBuild 'desktop-preview.txt')
-    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /platform:x64 /codepage:65001 ('/out:' + (Join-Path $taskBuild 'ServerTests.exe')) $taskRefs (Join-Path $taskRoot 'src\ServerModels.cs') (Join-Path $taskRoot 'src\EosClient.cs') (Join-Path $taskRoot 'tests\ServerTests.cs')
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /platform:x64 /codepage:65001 ('/out:' + (Join-Path $taskBuild 'ServerTests.exe')) $taskRefs $taskFactionSource (Join-Path $taskRoot 'src\ServerModels.cs') (Join-Path $taskRoot 'src\EosClient.cs') (Join-Path $taskRoot 'tests\ServerTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Server test compilation failed.' }
     & (Join-Path $taskBuild 'ServerTests.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Server tests failed.' }
-    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /platform:x64 /codepage:65001 ('/out:' + (Join-Path $taskBuild 'ServerBrowserTests.exe')) $taskRefs (Join-Path $taskRoot 'src\ServerModels.cs') (Join-Path $taskRoot 'src\EosClient.cs') (Join-Path $taskRoot 'src\ServerBrowserView.cs') (Join-Path $taskRoot 'tests\ServerBrowserTests.cs')
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /platform:x64 /codepage:65001 ('/out:' + (Join-Path $taskBuild 'ServerBrowserTests.exe')) $taskRefs $taskFactionSource (Join-Path $taskRoot 'src\ServerModels.cs') (Join-Path $taskRoot 'src\EosClient.cs') (Join-Path $taskRoot 'src\ServerBrowserView.cs') (Join-Path $taskRoot 'tests\ServerBrowserTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Server browser regression test compilation failed.' }
     & (Join-Path $taskBuild 'ServerBrowserTests.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Server browser regression tests failed.' }
@@ -79,7 +80,7 @@ if ($Test) {
 if ($Benchmark) {
     $taskBuild = Join-Path $taskRoot 'build'
     New-Item -ItemType Directory -Path $taskBuild -Force | Out-Null
-    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'RenderBenchmark.exe')) $taskRefs (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\WeaponCatalog.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'src\RaasData.cs') (Join-Path $taskRoot 'src\RaasPrediction.cs') (Join-Path $taskRoot 'src\ServerModels.cs') (Join-Path $taskRoot 'tests\RenderBenchmark.cs')
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /codepage:65001 ('/out:' + (Join-Path $taskBuild 'RenderBenchmark.exe')) $taskRefs $taskFactionSource (Join-Path $taskRoot 'src\Ballistics.cs') (Join-Path $taskRoot 'src\WeaponCatalog.cs') (Join-Path $taskRoot 'src\MapView.cs') (Join-Path $taskRoot 'src\RaasData.cs') (Join-Path $taskRoot 'src\RaasPrediction.cs') (Join-Path $taskRoot 'src\ServerModels.cs') (Join-Path $taskRoot 'tests\RenderBenchmark.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Render benchmark compilation failed.' }
     $taskMeasurements = & (Join-Path $taskBuild 'RenderBenchmark.exe') (Join-Path $taskMapRoot 'images\blackcoast.jpg')
     if ($LASTEXITCODE -ne 0) { throw 'Render benchmark failed.' }

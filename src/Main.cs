@@ -44,6 +44,8 @@ namespace SquadTools
         private readonly string layersDirectory;
         private RaasView raasView;
         private bool raasMode;
+        private bool serverPageActive;
+        private ServerRecord followedServer;
         private string currentLayerRawName;
         private string ImagePath { get { return Path.Combine(dataDirectory, "custom-map.png"); } }
 
@@ -100,7 +102,7 @@ namespace SquadTools
             ((CheckBox)root.FindName("Pin")).Unchecked += delegate { Topmost = false; };
             ((RadioButton)root.FindName("PlaceMortar")).Checked += delegate { map.PlaceWeapon = true; };
             ((RadioButton)root.FindName("PlaceTarget")).Checked += delegate { map.PlaceWeapon = false; };
-            mapSelector.SelectionChanged += delegate { if (!loading) { StopServerFollow(); currentLayerRawName=null; ApplySelectedMap(true); } };
+            mapSelector.SelectionChanged += delegate { if (!loading) { if(!raasMode || CanFollowRaas()) StopServerFollow(); currentLayerRawName=null; ApplySelectedMap(true); if(raasMode) UpdateRaasMap(); } };
             automaticHeight.Checked += delegate { if (!loading) { preferAutomaticHeight = true; UpdateHeightMode(); Recalculate(); } };
             automaticHeight.Unchecked += delegate { if (!loading) { preferAutomaticHeight = false; UpdateHeightMode(); Recalculate(); } };
             weaponGrid.TextChanged += delegate { if (!loading) { preciseWeapon = null; Recalculate(); } };
@@ -126,8 +128,10 @@ namespace SquadTools
             if (selected && serverBrowser == null) {
                 serverBrowser = new ServerBrowserView(testMode); host.Child = serverBrowser;
                 serverBrowser.ServerChosen += ChooseServerMap;
+                serverBrowser.FollowStopped += StopServerFollow;
                 serverBrowser.FollowedServerUpdated += UpdateFollowedServer;
             }
+            serverPageActive=selected;
             host.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
             ((UIElement)root.FindName("MortarHeading")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
             ((UIElement)root.FindName("MortarBody")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
@@ -143,6 +147,10 @@ namespace SquadTools
             map.PredictionMode=raasMode;
             ((TextBlock)root.FindName("MapGestureHint")).Text=raasMode?"左键确认候选旗点 · 右键拖动 · 滚轮缩放":"左键目标 · 右键拖动 · 右键双击炮位 · 滚轮缩放";
             if(raasMode) EnsureRaasView();
+            if(!selected) {
+                ApplyFollowedMap();
+                if(raasMode) RestoreRaasDisplay();
+            }
             if (serverBrowser != null) serverBrowser.SetActive(selected);
         }
 
@@ -158,15 +166,34 @@ namespace SquadTools
                     map.PredictionPointClicked+=raasView.ClickPoint;
                     raasView.MapRequested+=delegate(string id) {
                         var choice=mapChoices.Find(c=>c.Id==id); if(choice==null) return;
-                        if(mapSelector.SelectedItem==choice) { StopServerFollow(); currentLayerRawName=null; UpdateRaasMap(); }
+                        if(mapSelector.SelectedItem==choice) { if(CanFollowRaas()) StopServerFollow(); currentLayerRawName=null; UpdateRaasMap(); }
                         else mapSelector.SelectedItem=choice;
                     };
-                    raasView.LayerRequested+=delegate(string raw) { StopServerFollow(); currentLayerRawName=raw; };
+                    raasView.LayerRequested+=delegate(string raw) { if(CanFollowRaas()) StopServerFollow(); currentLayerRawName=raw; };
+                    raasView.SetMap(selectedMap==null?"custom":selectedMap.Id,null);
                 } catch(Exception ex) { if(!(ex is IOException) && !(ex is UnauthorizedAccessException) && !(ex is FormatException) && !(ex is ArgumentException)) throw; ((Border)((FrameworkElement)Content).FindName("RaasHost")).Child=new TextBlock { Text="RAAS 数据无法读取："+ex.Message,TextWrapping=TextWrapping.Wrap,Foreground=Brushes.Salmon }; return; }
             }
-            UpdateRaasMap();
         }
         private void UpdateRaasMap() { if(raasView!=null) raasView.SetMap(selectedMap==null?"custom":selectedMap.Id,currentLayerRawName); }
+        private void RestoreRaasDisplay()
+        {
+            if(raasView==null) return;
+            var choice=mapChoices.Find(c=>c.Id==raasView.MapId);
+            if(choice!=null) SetDisplayedMap(choice);
+        }
+        private void SetDisplayedMap(MapChoice choice)
+        {
+            if(mapSelector.SelectedItem==choice) return;
+            bool wasLoading=loading; loading=true;
+            try { mapSelector.SelectedItem=choice; } finally { loading=wasLoading; }
+            ApplySelectedMap(true);
+        }
+        private bool CanFollowRaas()
+        {
+            if(followedServer==null || raasView==null) return false;
+            var choice=ServerMapChoice(followedServer);
+            return choice!=null && raasView.HasLayer(choice.Id,followedServer.Map);
+        }
 
         private void SelectWeapon(string id, string shellId)
         {
@@ -195,34 +222,52 @@ namespace SquadTools
         private void ChooseServerMap(ServerRecord server)
         {
             if (!testMode && DateTime.UtcNow - server.RetrievedAt > TimeSpan.FromMinutes(2)) { serverBrowser.ShowMapSyncMessage("服务器数据较旧，请刷新后再同步地图。"); return; }
-            var choice = ServerMapChoice(server);
-            if (choice == null) { serverBrowser.ShowMapSyncMessage("本地未提供此地图，暂不能同步：" + server.Map); return; }
-            followedServerId = server.SessionId; serverBrowser.FollowServer(followedServerId);
-            ApplyServerMap(server, choice); SelectServerPage(false);
+            if(!ServerData.ValidSession(server.SessionId)) { serverBrowser.ShowMapSyncMessage("服务器会话无效，请刷新列表后重试。"); return; }
+            followedServerId = server.SessionId; followedServer=server;
+            serverBrowser.FollowServer(followedServerId,server.Name);
+            serverBrowser.ShowMapSyncMessage("已启用地图跟随。请手动切换至射击计算或 RAAS 猜点；当前页面和地图保持不变。");
+            serverMapNote.Text="已启用跟随："+server.Name+"\n手动进入地图页面后同步。";
+            stopServerFollow.Visibility=Visibility.Visible;
         }
 
         private void UpdateFollowedServer(ServerRecord server)
         {
             if (followedServerId == null) return;
-            if (server == null) { serverMapNote.Text = "未取得所跟随服务器的数据，保留当前地图。"; if(raasView!=null) raasView.ShowNotice("暂未取得服务器最新状态，当前显示上次已知图层。"); return; }
-            var choice = ServerMapChoice(server);
-            if (choice == null) { serverMapNote.Text = "服务器地图暂不支持：" + server.Map + "，保留当前地图。"; currentLayerRawName=server.Map; UpdateRaasMap(); if(raasView!=null) raasView.ShowNotice("服务器已换为未收录地图："+server.Map+"，已暂停旧图层的猜点。"); return; }
-            ApplyServerMap(server, choice);
+            if(server!=null && server.SessionId!=followedServerId) return;
+            followedServer=server;
+            if(!serverPageActive) ApplyFollowedMap();
         }
-
+        private void ApplyFollowedMap()
+        {
+            if(followedServerId==null) return;
+            if(followedServer==null) {
+                serverMapNote.Text="未取得所跟随服务器的数据，保留当前地图。";
+                if(raasMode && raasView!=null) { raasView.UseManualMode(); raasView.ShowNotice("暂未取得服务器最新状态，猜点保持手动选择。"); ((TextBlock)((FrameworkElement)Content).FindName("ModeBadge")).Text="●  RAAS 手动"; }
+                return;
+            }
+            var choice=ServerMapChoice(followedServer);
+            if(raasMode && !CanFollowRaas()) {
+                string notice="服务器当前图层 "+followedServer.Map+" 不是可跟随的 RAAS 图层，猜点保持手动选择。";
+                if(raasView!=null) { raasView.UseManualMode(); raasView.ShowNotice(notice); }
+                serverMapNote.Text=notice;
+                ((TextBlock)((FrameworkElement)Content).FindName("ModeBadge")).Text="●  RAAS 手动";
+                return;
+            }
+            if(choice==null) { serverMapNote.Text="服务器地图暂不支持："+followedServer.Map+"，保留当前地图。"; return; }
+            ApplyServerMap(followedServer,choice);
+        }
         private void ApplyServerMap(ServerRecord server, MapChoice choice)
         {
-            bool layerChanged=!string.Equals(currentLayerRawName,server.Map,StringComparison.OrdinalIgnoreCase);
             currentLayerRawName=server.Map;
-            if (mapSelector.SelectedItem != choice) {
-                bool wasLoading = loading; loading = true;
-                try { mapSelector.SelectedItem = choice; } finally { loading = wasLoading; }
-                ApplySelectedMap(true);
+            SetDisplayedMap(choice);
+            if(raasMode && raasView!=null) {
+                raasView.SetMap(choice.Id,server.Map,server.SessionId);
+                raasView.SetFactions(server.Team1Faction,server.Team2Faction,"服务器当前阵营");
             }
-            else if(layerChanged) UpdateRaasMap();
             serverMapNote.Text = "跟随地图：" + server.Map + "\n" + server.Name;
             serverMapNote.ToolTip = server.Name + " · 每 60 秒同步地图";
             stopServerFollow.Visibility = Visibility.Visible;
+            ((TextBlock)((FrameworkElement)Content).FindName("ModeBadge")).Text="●  地图跟随";
             if(raasView!=null) raasView.ShowNotice(null);
         }
 
@@ -230,6 +275,7 @@ namespace SquadTools
         {
             if (followedServerId == null) return;
             followedServerId = null; if (serverBrowser != null) serverBrowser.FollowServer(null);
+            followedServer=null; if(raasView!=null) raasView.UseManualMode();
             serverMapNote.Text = "已停止跟随服务器，可手动选择地图。"; stopServerFollow.Visibility = Visibility.Collapsed;
             ((TextBlock)((FrameworkElement)Content).FindName("ModeBadge")).Text = "●  离线可用";
         }
@@ -306,7 +352,6 @@ namespace SquadTools
             catch (Exception ex) { mapError = "地图加载失败：" + ex.Message; terrain = null; automaticHeight.IsEnabled = false; automaticHeight.IsChecked = false; UpdateHeightMode(); }
             finally { loading = wasLoading; }
             if (!loading) Recalculate();
-            UpdateRaasMap();
         }
 
         private void UpdateHeightMode()
@@ -544,8 +589,8 @@ namespace SquadTools
                 "4. 左上角选择工事或载具、具体武器及弹药。程序使用各自初速、重力和仰角限制，按武器显示密位、度数或度分。方位 0° 为北、90° 为东；NATO 密位采用 6400/圈。飞行时间为理论估算。\n\n" +
                 "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
                 "贝拉亚为暂退役的旧版地图，仅提供底图和手动高差。本版不判断地形遮挡，不含 OCR 或游戏读取，命中精度尚未经游戏实测。\n\n" +
-                "服务器列表：点击服务器行或按 Enter 即同步射击地图，并每 60 秒跟随换图。可在射击页停止跟随；手动换图也会停止。未知地图保留当前底图。上报人数、EOS 登记与可见成员口径不同；持续差异提示不等于已证实阴兵。\n\n" +
-                "RAAS 猜点：顶部选择该页，指定地图、具体 RAAS 图层和己方基地，依次确认旗点。支持上一步与重置，数据内置且可离线计算；切换图层会重置旧的选择。概率为路线模型估计，游戏更新后可能需要更新数据。\n\n" +
+                "服务器列表：点选仅查看详情。点击“启用地图跟随”后仍停留在列表，手动进入射击计算或 RAAS 猜点才同步，并每 60 秒跟随换图。非 RAAS 或未收录图层时，猜点保留手动地图和确认链。可在列表或射击页停止跟随。上报人数、EOS 登记与可见成员口径不同；持续差异提示不等于已证实阴兵。\n\n" +
+                "RAAS 猜点：顶部选择该页，指定地图、具体 RAAS 图层和己方基地，依次确认旗点。基地显示对应国旗或阵营代号；跟随时用服务器当前阵营，手动模式用图层默认阵营，缺失则显示未知。支持上一步与重置，数据内置且可离线计算。概率为路线模型估计，游戏更新后可能需要更新数据。\n\n" +
                 "算法及游戏参数参考 sh4rkman/SquadCalc（非商业许可）。地图素材归各自权利人。详见随附说明与 third_party。",
                 "使用说明 · 游戏 Squad 专用");
         }
@@ -735,7 +780,7 @@ namespace SquadTools
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  0.5.0 预览版' Foreground='#607B8E' FontSize='10'/><TextBlock Text='迫击炮离线可用 · 服务器按需联网' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
+  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  0.5.1 预览版' Foreground='#607B8E' FontSize='10'/><TextBlock Text='迫击炮离线可用 · 服务器按需联网' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
 </Grid>";
     }
 

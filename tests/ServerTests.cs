@@ -38,6 +38,13 @@ internal static class ServerTests
         Check(one.Name=="中文服务器 a" && one.Endpoint=="203.0.113.5:7787","utf8/address parse");
         Check(one.Queue==4 && one.ReservedQueue==1 && one.Capacity==100,"queue and capacity");
         Check(one.PlayersText=="81","reported population is not presented as a fraction of public-only capacity");
+        var factions=ServerData.ParseServers(List(Row(A,7787,80).Replace("\"MAPNAME_s\"","\"TEAMONE_s\":\"BAF_LO_CombinedArms\",\"TEAMTWO_s\":\"FSTemplate_RGF\",\"MAPNAME_s\"")),Now,1000).Servers[0];
+        Check(factions.Team1Faction=="BAF" && factions.Team2Faction=="RGF","EOS current team unit fields identify actual factions");
+        Check(factions.TeamsText.Contains("英国") && factions.TeamsText.Contains("俄罗斯"),"server details use faction names");
+        Check(one.Team1Faction=="" && one.Team2Faction=="","missing teams do not guess from map or layer");
+        foreach(string unit in new[]{"USA_LO_CombinedArms","USMC_S_CombinedArms_Seed","PLAAGF_LD_Armored","FSTemplate_VDV","baf"}) Check(FactionCatalog.Id(unit)!="","known vanilla unit resolves: "+unit);
+        foreach(string unit in new[]{null,"","SU_RGF_LO_CombinedArms","Unknown_USA","../USA","USA/../../RGF","USAAF","USA\nLO"}) Check(FactionCatalog.Id(unit)=="","unknown/modded units cannot impersonate a vanilla faction");
+        Check(FactionCatalog.Country("USA")==FactionCatalog.Country("USMC") && FactionCatalog.Name("USA")!=FactionCatalog.Name("USMC"),"branches share national flags while retaining distinct faction labels");
         Check(one.DuplicateCount==2 && result.Servers.Single(s=>s.SessionId==B).DuplicateCount==1,"same IP different ports");
         Check(!result.Partial,"complete list");
         Check(ServerData.ParseServers(List(Row(A,7787,80)),Now,1).Partial,"cap marks partial");

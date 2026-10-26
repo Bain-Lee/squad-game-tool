@@ -24,7 +24,9 @@ namespace SquadTools
         private readonly CheckBox allPoints = new CheckBox { Content="显示后续可能点", IsChecked=false };
         private readonly Button confirm = new Button { Content="确认所选点" }, undo = new Button { Content="上一步" }, reset = new Button { Content="重置" };
         private bool updating;
-        private string mapId, layerKey, contextLayer;
+        private string mapId, layerKey, contextLayer, contextServerId, team1, team2, teamSource;
+        public string MapId { get { return mapId; } }
+        public bool HasLayer(string id,string raw) { var info=repository.FindMap(id); return info!=null && info.Layers.Any(l=>string.Equals(l.RawName,raw,StringComparison.OrdinalIgnoreCase)); }
         public RaasSession Session { get; private set; }
         public event Action<string> MapRequested, LayerRequested;
         public event Action<IList<RaasMarker>> MarkersChanged;
@@ -49,7 +51,7 @@ namespace SquadTools
             Grid.SetRow(bottom,2); grid.Children.Add(bottom); Child=grid;
             mapPicker.ItemsSource=repository.Maps;
             mapPicker.SelectionChanged+=delegate { if(!updating && mapPicker.SelectedItem!=null && MapRequested!=null) MapRequested(((RaasMapInfo)mapPicker.SelectedItem).Id); };
-            layerPicker.SelectionChanged+=delegate { if(!updating && layerPicker.SelectedItem!=null) { string raw=((RaasLayerInfo)layerPicker.SelectedItem).RawName; contextLayer=raw; LoadLayer(raw); if(LayerRequested!=null) LayerRequested(raw); } };
+            layerPicker.SelectionChanged+=delegate { if(!updating && layerPicker.SelectedItem!=null) { string raw=((RaasLayerInfo)layerPicker.SelectedItem).RawName; contextLayer=raw; contextServerId=null; LoadLayer(raw); if(LayerRequested!=null) LayerRequested(raw); } };
             mainPicker.SelectionChanged+=delegate { if(!updating && Session!=null && mainPicker.SelectedIndex>0) { Session.ChooseMain(Session.Layer.Mains[mainPicker.SelectedIndex-1]); Render(); } };
             allPoints.Checked+=delegate { Render(); }; allPoints.Unchecked+=delegate { Render(); };
             candidates.SelectionChanged+=delegate { confirm.IsEnabled=candidates.SelectedItem!=null; };
@@ -59,11 +61,11 @@ namespace SquadTools
             Render();
         }
         private static TextBlock Title(string text,int size) { return new TextBlock { Text=text,FontSize=size,Foreground=Brushes.LightGray,Margin=new Thickness(0,0,0,7) }; }
-        public void SetMap(string id,string rawName)
+        public void SetMap(string id,string rawName,string sourceServerId = null)
         {
             var info=repository.FindMap(id);
-            if(mapId==id && string.Equals(contextLayer,rawName,StringComparison.OrdinalIgnoreCase)) return;
-            mapId=id; contextLayer=rawName; updating=true;
+            if(mapId==id && string.Equals(contextLayer,rawName,StringComparison.OrdinalIgnoreCase) && contextServerId==sourceServerId) return;
+            mapId=id; contextLayer=rawName; contextServerId=sourceServerId; updating=true;
             try {
                 mapPicker.SelectedItem=info; layerPicker.ItemsSource=info==null?null:info.Layers;
                 layerPicker.IsEnabled=info!=null && info.Layers.Count>0;
@@ -83,9 +85,10 @@ namespace SquadTools
             layerKey=rawName;
             try {
                 Session=new RaasSession(repository.Load(mapId,rawName));
+                team1=Session.Layer.Team1; team2=Session.Layer.Team2; teamSource="图层默认阵营（手动模式）";
                 bool previous=updating; updating=true;
                 try {
-                    mainPicker.ItemsSource=new[]{"请选择己方主基地"}.Concat(Session.Layer.Mains.Select(m=>m.Id==Session.Solver.Start?"队伍 1 主基地":"队伍 2 主基地")).ToList();
+                    mainPicker.ItemsSource=MainChoices();
                     mainPicker.SelectedIndex=0; mainPicker.IsEnabled=true;
                 } finally { updating=previous; }
                 ShowNotice(null);
@@ -94,8 +97,25 @@ namespace SquadTools
         }
         public void ShowNotice(string notice)
         {
-            if(notice!=null) message.Text=notice;
-            else if(Session!=null) message.Text="内置图层 "+Session.Layer.RawName+"\n数据 "+repository.Updated.Substring(0,Math.Min(10,repository.Updated.Length));
+            if(Session!=null) message.Text="内置图层 "+Session.Layer.RawName+"\n"+teamSource+"\n"+(notice ?? "数据 "+repository.Updated.Substring(0,Math.Min(10,repository.Updated.Length)));
+            else if(notice!=null) message.Text=notice;
+        }
+        private int Team(RaasPoint main) { if(main.Id.IndexOf("Team1",StringComparison.OrdinalIgnoreCase)>=0) return 1; if(main.Id.IndexOf("Team2",StringComparison.OrdinalIgnoreCase)>=0) return 2; return main.Id==Session.Solver.Start?1:2; }
+        private string MainName(RaasPoint main) { int team=Team(main); return "队伍 "+team+" · "+FactionCatalog.Name(team==1?team1:team2); }
+        private List<string> MainChoices() { return new[]{"请选择己方主基地"}.Concat(Session.Layer.Mains.Select(MainName)).ToList(); }
+        public void SetFactions(string first,string second,string source)
+        {
+            first=FactionCatalog.Id(first); second=FactionCatalog.Id(second);
+            if(Session==null || team1==first && team2==second && teamSource==source) return;
+            team1=first; team2=second; teamSource=source;
+            bool previous=updating; updating=true; int selected=mainPicker.SelectedIndex;
+            try { mainPicker.ItemsSource=MainChoices(); mainPicker.SelectedIndex=selected; } finally { updating=previous; }
+            ShowNotice(null); Render();
+        }
+        public void UseManualMode()
+        {
+            contextServerId=null;
+            if(Session!=null) SetFactions(Session.Layer.Team1,Session.Layer.Team2,"图层默认阵营（手动模式）");
         }
         private void ConfirmSelected() { var candidate=candidates.SelectedItem as RaasCandidate; if(candidate!=null) ClickPoint(candidate.Point); }
         public void ClickPoint(RaasPoint point)
@@ -115,7 +135,7 @@ namespace SquadTools
         {
             var markers=new List<RaasMarker>(); var next=new List<RaasCandidate>();
             if(Session!=null) {
-                foreach(var main in Session.Layer.Mains) markers.Add(new RaasMarker { Point=main,Label=main.Id==Session.Solver.Start?"1":"2",Caption=main.Id==Session.Solver.Start?"队伍1主基地":"队伍2主基地",Color=Session.Main==main?"#F6C85F":"#D99940",Clickable=true,SelectedMain=Session.Main==main });
+                foreach(var main in Session.Layer.Mains) markers.Add(new RaasMarker { Point=main,Label=Team(main).ToString(CultureInfo.InvariantCulture),Caption=MainName(main),FactionId=Team(main)==1?team1:team2,Color=Session.Main==main?"#F6C85F":"#D99940",Clickable=true,SelectedMain=Session.Main==main });
                 if(Session.Main!=null) foreach(var flag in Session.Layer.Flags) {
                     int confirmedAt=Session.Confirmed.IndexOf(flag);
                     var steps=Session.Result.Steps.Keys.Where(s=>Session.Result.Chance(flag,s)>0).OrderBy(s=>s).ToList();
