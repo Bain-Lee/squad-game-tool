@@ -76,6 +76,10 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0) { throw 'RAAS test compilation failed.' }
     & (Join-Path $taskBuild 'RaasTests.exe') (Join-Path $taskOutput 'layers') (Join-Path $taskOutput 'maps') (Join-Path $taskBuild 'raas-coverage.md') (Join-Path $taskRoot 'tests\fixtures\raas-reference.json') (Join-Path $taskBuild 'raas-preview.png')
     if ($LASTEXITCODE -ne 0) { throw 'RAAS tests failed.' }
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /platform:x64 /main:LayoutTests /codepage:65001 ('/out:' + (Join-Path $taskBuild 'LayoutTests.exe')) $taskRefs $taskSources (Join-Path $taskRoot 'tests\LayoutTests.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Layout test compilation failed.' }
+    & (Join-Path $taskBuild 'LayoutTests.exe') (Join-Path $taskOutput 'maps') $taskBuild
+    if ($LASTEXITCODE -ne 0) { throw 'Layout tests failed.' }
 }
 if ($Benchmark) {
     $taskBuild = Join-Path $taskRoot 'build'

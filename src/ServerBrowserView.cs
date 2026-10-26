@@ -27,6 +27,7 @@ namespace SquadTools
         private readonly ComboBox kind;
         private readonly CheckBox favoritesOnly, populated, fold, hideMismatch, autoCheck;
         private readonly TextBlock summary, status, detail, followStatus;
+        private readonly TextBlock detailTitle, detailMeta, detailReported, detailRegistered, detailObserved, detailQueue, detailInfo;
         private readonly Button refresh, check, favorite, cancel, follow;
         private readonly DispatcherTimer timer;
         private CancellationTokenSource operation;
@@ -48,6 +49,8 @@ namespace SquadTools
             table = (DataGrid)root.FindName("Servers"); search = (TextBox)root.FindName("Search"); kind = (ComboBox)root.FindName("Kind");
             favoritesOnly = (CheckBox)root.FindName("FavoritesOnly"); populated = (CheckBox)root.FindName("Populated"); fold = (CheckBox)root.FindName("Fold"); hideMismatch = (CheckBox)root.FindName("HideMismatch"); autoCheck = (CheckBox)root.FindName("AutoCheck");
             summary = (TextBlock)root.FindName("Summary"); status = (TextBlock)root.FindName("Status"); detail = (TextBlock)root.FindName("Detail");
+            detailTitle=(TextBlock)root.FindName("DetailTitle"); detailMeta=(TextBlock)root.FindName("DetailMeta");
+            detailReported=(TextBlock)root.FindName("DetailReported"); detailRegistered=(TextBlock)root.FindName("DetailRegistered"); detailObserved=(TextBlock)root.FindName("DetailObserved"); detailQueue=(TextBlock)root.FindName("DetailQueue"); detailInfo=(TextBlock)root.FindName("DetailInfo");
             followStatus = (TextBlock)root.FindName("FollowStatus"); follow = (Button)root.FindName("Follow");
             refresh = (Button)root.FindName("Refresh"); check = (Button)root.FindName("Check"); favorite = (Button)root.FindName("Favorite"); cancel = (Button)root.FindName("Cancel");
             kind.ItemsSource = new[] { "全部", "许可服", "自定义", "Fireteam" }; kind.SelectedIndex = 0;
@@ -96,7 +99,8 @@ namespace SquadTools
         public void FollowServer(string sessionId, string serverName = null)
         {
             followedSession = sessionId;
-            followStatus.Text = sessionId == null ? "地图跟随未启用。选中服务器后可点击右侧按钮启用。" : "地图跟随已启用：" + (serverName ?? "所选服务器") + "。手动切换页面后生效；非 RAAS 时猜点保持手动。";
+            followStatus.Text = sessionId == null ? "未启用地图跟随" : "跟随 · " + (serverName ?? "所选服务器");
+            followStatus.ToolTip=sessionId==null?"选中服务器后，可单独启用地图跟随。":"已启用跟随："+(serverName??"所选服务器")+"。手动进入地图页面后同步；非 RAAS 模式下猜点保持手动。";
             UpdateButtons();
             if (!testMode && !disposed && (active || followedSession != null)) timer.Start();
             else if (!active) { timer.Stop(); if (operation != null) operation.Cancel(); }
@@ -200,19 +204,26 @@ namespace SquadTools
             table.SelectedItem = rows.Find(s => s.SessionId == selectedId);
             if (table.SelectedItem == null && rows.Count > 0) table.SelectedIndex = 0;
             int aliases = snapshot.Servers.Where(s => s.Endpoint != "").GroupBy(s => s.Endpoint).Sum(g => Math.Max(0, g.Count() - 1));
-            summary.Text = snapshot.RetrievedAt == DateTime.MinValue ? "进入此页后联网查询；迫击炮仍可离线使用。" : string.Format("显示 {0} / {1} 台  ·  相同连接入口多余记录 {2} 条  ·  更新 {3:HH:mm:ss}{4}", rows.Count, snapshot.Servers.Count, aliases, snapshot.RetrievedAt.ToLocalTime(), snapshot.Partial ? "  ·  部分结果" : "");
+            summary.Text = snapshot.RetrievedAt == DateTime.MinValue ? "尚未刷新" : string.Format("{0} / {1} 台 · {2:HH:mm} 更新{3}",rows.Count,snapshot.Servers.Count,snapshot.RetrievedAt.ToLocalTime(),snapshot.Partial?" · 部分结果":"");
+            summary.ToolTip="相同连接入口的多余记录："+aliases+"。上报人数、EOS 登记和可见成员为不同口径，均不能证明真人活跃。";
             ShowDetail();
         }
 
         private void ShowDetail()
         {
             var server = table.SelectedItem as ServerRecord;
-            if (server == null) detail.Text = "选择服务器后查看连接地址、数据来源和核验时间。";
-            else detail.Text = server.Name + "\n" + server.Kind + "  ·  " + (server.Endpoint == "" ? "连接地址未提供" : server.Endpoint) + "  ·  " + server.Version + (server.Password ? "  ·  需要密码" : "") +
+            detailTitle.Text=server==null?"选择服务器":server.Name;
+            detailMeta.Text=server==null?"点选列表查看状态":server.Map+" · "+server.TeamsText;
+            detailReported.Text=ServerRecord.Value(server==null?null:server.Reported); detailRegistered.Text=ServerRecord.Value(server==null?null:server.Registered);
+            detailObserved.Text=ServerRecord.Value(server==null?null:server.Observed); detailQueue.Text=server==null?"—":server.QueueText;
+            detail.Text=server==null?"地图跟随需单独启用":(server.CheckState??"待核验")+(server.ObservedAt==DateTime.MinValue?"":" · "+server.ObservedAt.ToLocalTime().ToString("HH:mm"))+(server.DuplicateCount>1?" · 同入口 ×"+server.DuplicateCount:"");
+            string full=server==null?"选中服务器后查看状态，点击启用地图跟随后再手动切换页面。":server.Name + "\n" + server.Kind + "  ·  " + (server.Endpoint == "" ? "连接地址未提供" : server.Endpoint) + "  ·  " + server.Version + (server.Password ? "  ·  需要密码" : "") +
+                "\n图层："+server.Map+
                 "\n上报 " + ServerRecord.Value(server.Reported) + " 人 / EOS 登记 " + ServerRecord.Value(server.Registered) + " 人 / 可见成员 " + ServerRecord.Value(server.Observed) + " 人。公开容量 " + ServerRecord.Value(server.Capacity) + "；排队：普通 " + ServerRecord.Value(server.Queue) + "，预留 " + ServerRecord.Value(server.ReservedQueue) + "。" +
                 "\n" + (server.ObservedAt == DateTime.MinValue ? "此服务器尚未核验。" : "最近核验 " + server.ObservedAt.ToLocalTime().ToString("HH:mm:ss") + " · " + server.CheckState + "。") +
                 (server.DuplicateCount > 1 ? " 有 " + server.DuplicateCount + " 条记录指向相同连接入口，可取消折叠查看；尚不能确认原服身份。" : "") +
-                "\n对阵：" + server.TeamsText + "。\n点选仅查看详情；启用地图跟随后，手动切换至射击计算或 RAAS 猜点。";
+                "\n对阵：" + server.TeamsText + "。\n可见成员可能缺失或滞后，不等同于真人活跃人数。";
+            foreach(var block in new[]{detailTitle,detailMeta,detail,detailInfo}) block.ToolTip=new TextBlock{Text=full,TextWrapping=TextWrapping.Wrap,MaxWidth=490,FontSize=12,LineHeight=21};
             UpdateButtons();
         }
 
@@ -220,7 +231,7 @@ namespace SquadTools
         {
             var selected = table.SelectedItem as ServerRecord;
             refresh.IsEnabled = !busy; cancel.IsEnabled = busy; check.IsEnabled = !busy && selected != null;
-            favorite.IsEnabled = selected != null && favoritesReadable; favorite.Content = selected != null && selected.Favorite ? "取消收藏" : "收藏服务器";
+            favorite.IsEnabled = selected != null && favoritesReadable; favorite.Content = selected != null && selected.Favorite ? "已收藏" : "收藏";
             follow.IsEnabled = selected != null && !disposed;
             follow.Content = selected != null && selected.SessionId == followedSession ? "停止跟随此服务器" : followedSession == null ? "启用地图跟随" : "改为跟随所选服务器";
             favorite.ToolTip = favoritesReadable ? null : "收藏文件无法读取，已暂停写入以保留原文件；修复文件后重启可恢复。";
@@ -271,19 +282,44 @@ namespace SquadTools
         private const string Layout = @"
 <Grid xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
  <Grid.Resources>
-  <Style TargetType='CheckBox'><Setter Property='Foreground' Value='#AFC1CC'/><Setter Property='FontSize' Value='11'/><Setter Property='Margin' Value='0,0,18,0'/><Setter Property='VerticalAlignment' Value='Center'/></Style>
-  <Style TargetType='DataGridColumnHeader'><Setter Property='Background' Value='#203340'/><Setter Property='Foreground' Value='#AFC1CC'/><Setter Property='Padding' Value='8,12'/><Setter Property='BorderThickness' Value='0'/></Style>
-  <Style TargetType='DataGridRow'><Setter Property='Background' Value='#14212C'/><Setter Property='Foreground' Value='#DCE5E8'/><Setter Property='MinHeight' Value='42'/><Style.Triggers><Trigger Property='IsSelected' Value='True'><Setter Property='Background' Value='#304D41'/><Setter Property='Foreground' Value='#FFFFFF'/></Trigger></Style.Triggers></Style>
-  <Style TargetType='DataGridCell'><Setter Property='BorderThickness' Value='0'/><Setter Property='Padding' Value='7,5'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='DataGridCell'><Border Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}'><ContentPresenter VerticalAlignment='Center'/></Border></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property='IsSelected' Value='True'><Setter Property='Background' Value='#304D41'/><Setter Property='Foreground' Value='#FFFFFF'/></Trigger></Style.Triggers></Style>
+  <Style TargetType='CheckBox'><Setter Property='Foreground' Value='#A6B2C1'/><Setter Property='FontSize' Value='11'/><Setter Property='Margin' Value='0,0,18,0'/><Setter Property='VerticalAlignment' Value='Center'/></Style>
+  <Style TargetType='DataGridColumnHeader'><Setter Property='Background' Value='#1D2835'/><Setter Property='Foreground' Value='#98A8BB'/><Setter Property='Padding' Value='10,12'/><Setter Property='BorderThickness' Value='0'/></Style>
+  <Style TargetType='DataGridRow'><Setter Property='Background' Value='#141D27'/><Setter Property='Foreground' Value='#DCE4EE'/><Setter Property='MinHeight' Value='44'/><Style.Triggers><Trigger Property='IsSelected' Value='True'><Setter Property='Background' Value='#283E55'/><Setter Property='Foreground' Value='#FFFFFF'/></Trigger></Style.Triggers></Style>
+  <Style TargetType='DataGridCell'><Setter Property='BorderThickness' Value='0'/><Setter Property='Padding' Value='10,6'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='DataGridCell'><Border Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}'><ContentPresenter VerticalAlignment='Center'/></Border></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property='IsSelected' Value='True'><Setter Property='Background' Value='#283E55'/><Setter Property='Foreground' Value='#FFFFFF'/></Trigger></Style.Triggers></Style>
  </Grid.Resources>
- <Grid.RowDefinitions><RowDefinition Height='64'/><RowDefinition Height='82'/><RowDefinition Height='70'/><RowDefinition Height='*'/><RowDefinition Height='170'/></Grid.RowDefinitions>
-  <DockPanel LastChildFill='False'><StackPanel DockPanel.Dock='Left'><TextBlock Text='服务器列表' FontSize='27' FontWeight='SemiBold'/><TextBlock Text='点选查看详情；地图跟随需单独启用，随后手动切换页面。' Foreground='#8298A8' FontSize='12' Margin='0,7,0,0'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='Cancel' Content='取消查询' Margin='0,0,10,0'/><Button x:Name='Refresh' Content='刷新列表' Background='#B8EB7E' Foreground='#16251B'/></StackPanel></DockPanel>
- <StackPanel Grid.Row='1'><Grid><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='130'/></Grid.ColumnDefinitions><Grid Margin='0,0,12,0'><TextBox x:Name='Search' ToolTip='搜索服务器名称、地图、模式或 IP' FontSize='13' Padding='10,7'/><TextBlock Text='搜索服务器名称 / 地图 / 模式 / IP' IsHitTestVisible='False' Foreground='#728A9B' FontSize='12' VerticalAlignment='Center' Margin='11,0'><TextBlock.Style><Style TargetType='TextBlock'><Setter Property='Visibility' Value='Collapsed'/><Style.Triggers><DataTrigger Binding='{Binding Text, ElementName=Search}' Value=''><Setter Property='Visibility' Value='Visible'/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid><ComboBox x:Name='Kind' Grid.Column='1' TextElement.Foreground='#EDF4F3'><ComboBox.ItemTemplate><DataTemplate><TextBlock Text='{Binding}' Foreground='#EDF4F3'/></DataTemplate></ComboBox.ItemTemplate></ComboBox></Grid><WrapPanel Margin='0,12,0,0'><CheckBox x:Name='FavoritesOnly' Content='只看收藏'/><CheckBox x:Name='Populated' Content='隐藏上报空服'/><CheckBox x:Name='Fold' Content='折叠相同连接入口' IsChecked='True'/><CheckBox x:Name='HideMismatch' Content='隐藏持续人数差异' ToolTip='仅隐藏经过连续核验的显著差异；不能等同于已确认阴兵'/><CheckBox x:Name='AutoCheck' Content='刷新后核验前 10 台' IsChecked='True'/></WrapPanel></StackPanel>
- <StackPanel Grid.Row='2'><TextBlock x:Name='Summary' Foreground='#B8EB7E' FontSize='11'/><TextBlock x:Name='Status' Text='列表每 60 秒刷新；离开此页且未启用跟随时暂停查询。' Foreground='#8298A8' FontSize='11' Margin='0,7,0,0' TextTrimming='CharacterEllipsis'/><TextBlock x:Name='FollowStatus' Text='地图跟随未启用。选中服务器后可点击右侧按钮启用。' Foreground='#B8EB7E' FontSize='11' Margin='0,7,0,0' TextTrimming='CharacterEllipsis'/></StackPanel>
- <DataGrid x:Name='Servers' Grid.Row='3' AutoGenerateColumns='False' IsReadOnly='True' CanUserAddRows='False' CanUserDeleteRows='False' CanUserReorderColumns='False' EnableRowVirtualization='True' EnableColumnVirtualization='True' SelectionMode='Single' SelectionUnit='FullRow' HeadersVisibility='Column' GridLinesVisibility='Horizontal' HorizontalGridLinesBrush='#243541' BorderBrush='#283B49' Background='#101B24' RowHeaderWidth='0' FontSize='11' ScrollViewer.CanContentScroll='True'>
-  <DataGrid.Columns><DataGridTextColumn Header='★' Binding='{Binding FavoriteText}' Width='32'/><DataGridTextColumn Header='服务器' Binding='{Binding Name}' Width='*' MinWidth='220'/><DataGridTextColumn Header='地图' Binding='{Binding Map}' Width='160'/><DataGridTextColumn Header='上报人数' Binding='{Binding PlayersText}' SortMemberPath='Reported' Width='90'/><DataGridTextColumn Header='EOS登记' Binding='{Binding RegisteredText}' SortMemberPath='Registered' Width='72'/><DataGridTextColumn Header='可见成员' Binding='{Binding ObservedText}' SortMemberPath='Observed' Width='72'/><DataGridTextColumn Header='排队 / 预留' Binding='{Binding QueueText}' Width='83'/><DataGridTextColumn Header='核验状态' Binding='{Binding StatusText}' Width='172'/></DataGrid.Columns>
+ <Grid.RowDefinitions><RowDefinition Height='68'/><RowDefinition Height='Auto'/><RowDefinition Height='52'/><RowDefinition Height='*' MinHeight='100'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
+ <DockPanel LastChildFill='False'><StackPanel DockPanel.Dock='Left'><TextBlock Text='服务器' FontSize='25' FontWeight='SemiBold'/><TextBlock Text='查看状态，按需跟随地图。' Foreground='#8F9EAF' FontSize='12' Margin='0,6,0,0'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Top'><Button x:Name='Cancel' Content='取消' Background='Transparent' Margin='0,0,8,0'/><Button x:Name='Refresh' Content='刷新' Background='#3B628D' Foreground='#EDF4FF'/></StackPanel></DockPanel>
+ <StackPanel Grid.Row='1' Margin='0,0,0,12'>
+  <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition Width='116'/></Grid.ColumnDefinitions><Grid><TextBox x:Name='Search' ToolTip='搜索名称、地图、模式或 IP' FontSize='13' Padding='10,8'/><TextBlock Text='搜索服务器、地图或 IP' IsHitTestVisible='False' Foreground='#718398' FontSize='12' VerticalAlignment='Center' Margin='11,0'><TextBlock.Style><Style TargetType='TextBlock'><Setter Property='Visibility' Value='Collapsed'/><Style.Triggers><DataTrigger Binding='{Binding Text, ElementName=Search}' Value=''><Setter Property='Visibility' Value='Visible'/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid><ComboBox x:Name='Kind' Grid.Column='2' TextElement.Foreground='#EDF1F7'><ComboBox.ItemTemplate><DataTemplate><TextBlock Text='{Binding}' Foreground='#EDF1F7'/></DataTemplate></ComboBox.ItemTemplate></ComboBox></Grid>
+  <Grid Margin='0,12,0,0'><Grid.ColumnDefinitions><ColumnDefinition Width='Auto'/><ColumnDefinition Width='Auto'/><ColumnDefinition/></Grid.ColumnDefinitions><CheckBox x:Name='FavoritesOnly' Content='仅收藏'/><CheckBox x:Name='Populated' Grid.Column='1' Content='隐藏空服' ToolTip='隐藏明确上报为空的服务器；未知人数保留。'/><Expander x:Name='AdvancedFilters' Grid.Column='2' Header='更多筛选' HorizontalAlignment='Right'><WrapPanel Margin='12,10,0,0'><CheckBox x:Name='Fold' Content='合并相同入口' IsChecked='True' ToolTip='折叠相同 IP 与端口的多条记录，不判断原服归属。'/><CheckBox x:Name='HideMismatch' Content='隐藏持续差异' ToolTip='仅隐藏连续核验存在显著差异的记录；不能据此确认阴兵。'/><CheckBox x:Name='AutoCheck' Content='自动核验前 10 台' IsChecked='True'/></WrapPanel></Expander></Grid>
+ </StackPanel>
+ <Grid Grid.Row='2'><Grid.RowDefinitions><RowDefinition Height='22'/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><TextBlock x:Name='Summary' Foreground='#AAB9CB' FontSize='11' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, RelativeSource={RelativeSource Self}}'/><TextBlock x:Name='FollowStatus' Grid.Column='1' Text='未启用地图跟随' Foreground='#9CBDE5' FontSize='11' HorizontalAlignment='Right' MaxWidth='480' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, RelativeSource={RelativeSource Self}}'/><TextBlock x:Name='Status' Grid.Row='1' Grid.ColumnSpan='2' Text='每分钟刷新' Foreground='#7E91A7' FontSize='11' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, RelativeSource={RelativeSource Self}}'/></Grid>
+ <DataGrid x:Name='Servers' Grid.Row='3' AutoGenerateColumns='False' IsReadOnly='True' CanUserAddRows='False' CanUserDeleteRows='False' CanUserReorderColumns='False' EnableRowVirtualization='True' EnableColumnVirtualization='True' SelectionMode='Single' SelectionUnit='FullRow' HeadersVisibility='Column' GridLinesVisibility='Horizontal' HorizontalGridLinesBrush='#222F3E' BorderBrush='#2A3441' Background='#111A24' RowHeaderWidth='0' FontSize='12' ScrollViewer.CanContentScroll='True'>
+  <DataGrid.Columns>
+   <DataGridTextColumn Header='☆' Binding='{Binding FavoriteText}' Width='36'/>
+   <DataGridTextColumn Header='服务器' Binding='{Binding Name}' Width='*' MinWidth='220'><DataGridTextColumn.ElementStyle><Style TargetType='TextBlock'><Setter Property='TextTrimming' Value='CharacterEllipsis'/><Setter Property='ToolTip' Value='{Binding Name}'/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+   <DataGridTextColumn Header='地图' Binding='{Binding Map}' Width='190'><DataGridTextColumn.ElementStyle><Style TargetType='TextBlock'><Setter Property='TextTrimming' Value='CharacterEllipsis'/><Setter Property='ToolTip' Value='{Binding Map}'/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+   <DataGridTextColumn Header='上报人数' Binding='{Binding PlayersText}' SortMemberPath='Reported' Width='94'/>
+   <DataGridTextColumn Header='可见成员' Binding='{Binding ObservedText}' SortMemberPath='Observed' Width='94'/>
+   <DataGridTextColumn Header='核验状态' Binding='{Binding StatusText}' Width='180'><DataGridTextColumn.ElementStyle><Style TargetType='TextBlock'><Setter Property='TextTrimming' Value='CharacterEllipsis'/><Setter Property='ToolTip' Value='{Binding StatusText}'/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+  </DataGrid.Columns>
  </DataGrid>
- <Border Grid.Row='4' Background='#14212C' BorderBrush='#283B49' BorderThickness='1' CornerRadius='6' Padding='14' Margin='0,12,0,0'><Grid><Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition Width='166'/></Grid.ColumnDefinitions><ScrollViewer VerticalScrollBarVisibility='Auto'><TextBlock x:Name='Detail' TextWrapping='Wrap' FontSize='11' LineHeight='22' Foreground='#AFC1CC' Margin='0,0,12,0'/></ScrollViewer><StackPanel Grid.Column='1'><Button x:Name='Follow' Content='启用地图跟随' Background='#35583F' Margin='0,0,0,8'/><Button x:Name='Check' Content='核验所选人数' Background='#B8EB7E' Foreground='#16251B' Margin='0,0,0,8'/><Button x:Name='Favorite' Content='收藏服务器'/></StackPanel></Grid></Border>
+ <Border x:Name='DetailCard' Grid.Row='4' Background='#171F29' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13' Padding='18,16' Margin='0,14,0,0'>
+  <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='22'/><ColumnDefinition Width='160'/></Grid.ColumnDefinitions>
+   <StackPanel>
+    <TextBlock x:Name='DetailTitle' Text='选择服务器' FontSize='14' FontWeight='Medium' TextTrimming='CharacterEllipsis'/>
+    <TextBlock x:Name='DetailMeta' Foreground='#8F9EAF' FontSize='11' Margin='0,6,0,0' TextTrimming='CharacterEllipsis'/>
+    <Grid Margin='0,16,0,13'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+     <StackPanel><TextBlock Text='上报人数' Foreground='#8F9EAF' FontSize='10'/><TextBlock x:Name='DetailReported' Text='—' FontSize='17' Margin='0,5,0,0'/></StackPanel>
+     <StackPanel Grid.Column='1'><TextBlock Text='EOS 登记' Foreground='#8F9EAF' FontSize='10'/><TextBlock x:Name='DetailRegistered' Text='—' FontSize='17' Margin='0,5,0,0'/></StackPanel>
+     <StackPanel Grid.Column='2'><TextBlock Text='可见成员' Foreground='#8F9EAF' FontSize='10'/><TextBlock x:Name='DetailObserved' Text='—' FontSize='17' Margin='0,5,0,0'/></StackPanel>
+     <StackPanel Grid.Column='3'><TextBlock Text='排队 · 普通 / 预留' Foreground='#8F9EAF' FontSize='10'/><TextBlock x:Name='DetailQueue' Text='—' FontSize='17' Margin='0,5,0,0'/></StackPanel>
+    </Grid>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions><TextBlock x:Name='Detail' Foreground='#8F9EAF' FontSize='11' TextTrimming='CharacterEllipsis'/><TextBlock x:Name='DetailInfo' Grid.Column='1' Text='详情 ⓘ' Foreground='#9CBDE5' FontSize='11' Margin='12,0,0,0' Cursor='Help' ToolTipService.ShowDuration='30000'/></Grid>
+   </StackPanel>
+   <StackPanel Grid.Column='2' VerticalAlignment='Center'><Button x:Name='Follow' Content='启用地图跟随' Background='#304A64' Margin='0,0,0,8' ToolTip='启用后仍停留在列表；手动切换地图页面时生效。'/><Button x:Name='Check' Content='核验人数' Margin='0,0,0,8'/><Button x:Name='Favorite' Content='收藏'/></StackPanel>
+  </Grid>
+ </Border>
 </Grid>";
     }
 }

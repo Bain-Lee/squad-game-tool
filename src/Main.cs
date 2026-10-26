@@ -67,7 +67,7 @@ namespace SquadTools
             Title = "Squad Tools · 射击计算与服务器";
             Width = 1280; Height = 850; MinWidth = 1060; MinHeight = 740;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            Background = (Brush)new BrushConverter().ConvertFromString("#0C141C");
+            Background = (Brush)new BrushConverter().ConvertFromString("#101720");
             FontFamily = new FontFamily("Microsoft YaHei UI");
             Content = XamlReader.Parse(Layout);
             var root = (FrameworkElement)Content;
@@ -136,16 +136,16 @@ namespace SquadTools
             ((UIElement)root.FindName("MortarHeading")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
             ((UIElement)root.FindName("MortarBody")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
             ((TextBlock)root.FindName("ModeBadge")).Text = selected ? "●  在线列表" : followedServerId == null ? "●  离线可用" : "●  地图跟随";
-            ((Button)root.FindName("ServerTab")).Background = new SolidColorBrush(selected ? Color.FromRgb(55, 88, 63) : Color.FromRgb(35, 53, 67));
-            ((Button)root.FindName("MortarTab")).Background = new SolidColorBrush(!selected && !raasMode ? Color.FromRgb(55,88,63) : Color.FromRgb(35,53,67));
-            ((Button)root.FindName("RaasTab")).Background = new SolidColorBrush(!selected && raasMode ? Color.FromRgb(55,88,63) : Color.FromRgb(35,53,67));
+            ((Button)root.FindName("ServerTab")).Background = new SolidColorBrush(selected ? Color.FromRgb(48,74,100) : Colors.Transparent);
+            ((Button)root.FindName("MortarTab")).Background = new SolidColorBrush(!selected && !raasMode ? Color.FromRgb(48,74,100) : Colors.Transparent);
+            ((Button)root.FindName("RaasTab")).Background = new SolidColorBrush(!selected && raasMode ? Color.FromRgb(48,74,100) : Colors.Transparent);
             ((UIElement)root.FindName("FireControls")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             ((UIElement)root.FindName("RaasHost")).Visibility=raasMode?Visibility.Visible:Visibility.Collapsed;
-            ((TextBlock)root.FindName("PageTitle")).Text=raasMode?"RAAS 路线猜点":"射击计算器";
-            ((TextBlock)root.FindName("PageDescription")).Text=raasMode?"选择地图、RAAS 图层和己方基地，依次确认旗点以收敛下一点。":"选择武器，标记炮位与目标，计算方位、仰角与飞行时间。";
+            ((TextBlock)root.FindName("PageTitle")).Text=raasMode?"RAAS 猜点":"射击计算";
+            ((TextBlock)root.FindName("PageDescription")).Text=raasMode?"确认已知旗点，查看下一点。":"点选地图，或输入坐标。";
             ((RadioButton)root.FindName("PlaceTarget")).Visibility=((RadioButton)root.FindName("PlaceMortar")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             map.PredictionMode=raasMode;
-            ((TextBlock)root.FindName("MapGestureHint")).Text=raasMode?"左键确认候选旗点 · 右键拖动 · 滚轮缩放":"左键目标 · 右键拖动 · 右键双击炮位 · 滚轮缩放";
+            ((TextBlock)root.FindName("MapGestureHint")).Text=raasMode?"点选旗点确认":"左键目标 · 右键双击炮位";
             if(raasMode) EnsureRaasView();
             if(!selected) {
                 ApplyFollowedMap();
@@ -208,6 +208,7 @@ namespace SquadTools
                 shellSelector.ItemsSource = selectedWeapon.Shells; shellSelector.SelectedItem = selectedShell;
                 shellSelector.IsEnabled = selectedWeapon.Shells.Count > 1;
                 weaponInfo.Text = string.Format(CultureInfo.InvariantCulture, "初速 {0:0.##} m/s · 仰角 {1:0.###}–{2:0.###}°{3}", selectedShell.Velocity, selectedWeapon.MinDegrees, selectedWeapon.MaxDegrees, selectedWeapon.Deceleration > 0 ? " · 距离相关速度近似" : "");
+                weaponSelector.ToolTip=selectedWeapon.Name+"\n"+weaponInfo.Text;
                 UpdateHeightMode();
             } finally { loading = wasLoading; }
             if (!loading) Recalculate();
@@ -264,7 +265,7 @@ namespace SquadTools
                 raasView.SetMap(choice.Id,server.Map,server.SessionId);
                 raasView.SetFactions(server.Team1Faction,server.Team2Faction,"服务器当前阵营");
             }
-            serverMapNote.Text = "跟随地图：" + server.Map + "\n" + server.Name;
+            serverMapNote.Text = "跟随 · " + server.Name;
             serverMapNote.ToolTip = server.Name + " · 每 60 秒同步地图";
             stopServerFollow.Visibility = Visibility.Visible;
             ((TextBlock)((FrameworkElement)Content).FindName("ModeBadge")).Text="●  地图跟随";
@@ -411,7 +412,7 @@ namespace SquadTools
                     flight.Text = SelectedTime.ToString("F1") + " s";
                     elevationLabel.Text = (solution.SelectedHigh ? "高抛" : "低抛") + unitLabel;
                     status.Text = (solution.SelectedHigh ? "高抛解可用 · " : solution.HighUsable ? "低抛解可用 · " : "仅低抛解可用 · ") + (automatic ? "自动地形高差" : "手动地面高差");
-                    status.Foreground = new SolidColorBrush(Color.FromRgb(184, 235, 126));
+                    status.Foreground = new SolidColorBrush(Color.FromRgb(169,189,207));
                 }
                 else
                 {
@@ -698,89 +699,111 @@ namespace SquadTools
         }
 
         private const string Layout = @"
-<Grid xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Margin='28,22,28,20'>
+<Grid xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' xmlns:sys='clr-namespace:System;assembly=mscorlib' Margin='24,20,24,16'>
   <Grid.Resources>
-    <Style TargetType='TextBlock'><Setter Property='Foreground' Value='#DCE5E8'/></Style>
+    <sys:Double x:Key='{x:Static SystemParameters.VerticalScrollBarWidthKey}'>6</sys:Double>
+    <sys:Double x:Key='{x:Static SystemParameters.HorizontalScrollBarHeightKey}'>6</sys:Double>
+    <Style TargetType='TextBlock'><Setter Property='Foreground' Value='#E9EDF2'/></Style>
+    <Style TargetType='ToolTip'><Style.Resources><DataTemplate DataType='{x:Type sys:String}'><TextBlock Text='{Binding}' TextWrapping='Wrap' MaxWidth='490'/></DataTemplate></Style.Resources><Setter Property='Background' Value='#242D39'/><Setter Property='Foreground' Value='#E9EDF2'/><Setter Property='BorderBrush' Value='#394454'/><Setter Property='Padding' Value='12,9'/><Setter Property='MaxWidth' Value='520'/></Style>
     <Style TargetType='TextBox'>
-      <Setter Property='Background' Value='#0F1B25'/><Setter Property='Foreground' Value='#EDF4F3'/><Setter Property='BorderBrush' Value='#344755'/><Setter Property='CaretBrush' Value='#B8EB7E'/><Setter Property='SelectionBrush' Value='#496E55'/><Setter Property='BorderThickness' Value='1'/><Setter Property='Padding' Value='11,9'/><Setter Property='FontSize' Value='15'/><Setter Property='VerticalContentAlignment' Value='Center'/>
+      <Setter Property='Background' Value='#111820'/><Setter Property='Foreground' Value='#EDF1F7'/><Setter Property='BorderBrush' Value='#35404E'/><Setter Property='CaretBrush' Value='#ADCDF9'/><Setter Property='SelectionBrush' Value='#365679'/><Setter Property='BorderThickness' Value='1'/><Setter Property='Padding' Value='10,8'/><Setter Property='FontSize' Value='14'/><Setter Property='VerticalContentAlignment' Value='Center'/>
+      <Style.Triggers><Trigger Property='IsKeyboardFocused' Value='True'><Setter Property='BorderBrush' Value='#8BB8F4'/></Trigger></Style.Triggers>
     </Style>
     <Style TargetType='Button'>
-      <Setter Property='Background' Value='#233543'/><Setter Property='Foreground' Value='#E4ECEF'/><Setter Property='BorderThickness' Value='0'/><Setter Property='Padding' Value='13,9'/><Setter Property='Cursor' Value='Hand'/><Setter Property='FontSize' Value='12'/>
-      <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'><Border x:Name='Surface' Background='{TemplateBinding Background}' CornerRadius='5' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='Surface' Property='Opacity' Value='0.8'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='Surface' Property='Opacity' Value='0.6'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+      <Setter Property='Background' Value='#26313F'/><Setter Property='Foreground' Value='#E9EDF2'/><Setter Property='BorderThickness' Value='0'/><Setter Property='Padding' Value='13,8'/><Setter Property='Cursor' Value='Hand'/><Setter Property='FontSize' Value='12'/>
+      <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'><Border x:Name='Surface' Background='{TemplateBinding Background}' BorderBrush='Transparent' BorderThickness='1' CornerRadius='8' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='Surface' Property='Opacity' Value='0.82'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='Surface' Property='Opacity' Value='0.65'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='Surface' Property='BorderBrush' Value='#ADCDF9'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter TargetName='Surface' Property='Opacity' Value='0.4'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
     </Style>
-    <Style TargetType='RadioButton'><Setter Property='Foreground' Value='#CEDBDD'/><Setter Property='Margin' Value='0,0,16,0'/><Setter Property='VerticalAlignment' Value='Center'/></Style>
+    <Style TargetType='CheckBox'><Setter Property='Foreground' Value='#A6B2C1'/><Setter Property='FontSize' Value='12'/><Setter Property='VerticalAlignment' Value='Center'/></Style>
+    <Style TargetType='RadioButton'><Setter Property='Foreground' Value='#BAC4D0'/><Setter Property='Margin' Value='0,0,12,0'/><Setter Property='FontSize' Value='11'/><Setter Property='VerticalAlignment' Value='Center'/></Style>
+    <Style TargetType='Expander'><Setter Property='Foreground' Value='#A6B2C1'/><Setter Property='FontSize' Value='11'/></Style>
+    <Style TargetType='ListBoxItem'><Setter Property='Foreground' Value='#E9EDF2'/><Setter Property='Padding' Value='9,7'/><Setter Property='HorizontalContentAlignment' Value='Stretch'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ListBoxItem'><Border x:Name='Item' Background='Transparent' CornerRadius='6' Padding='{TemplateBinding Padding}'><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='Item' Property='Background' Value='#253548'/></Trigger><Trigger Property='IsSelected' Value='True'><Setter TargetName='Item' Property='Background' Value='#304A64'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='Item' Property='Background' Value='#304A64'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
     <Style TargetType='ComboBoxItem'>
-      <Setter Property='Foreground' Value='#E4ECEF'/><Setter Property='Padding' Value='10,8'/>
-      <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ComboBoxItem'><Border x:Name='Item' Background='Transparent' Padding='{TemplateBinding Padding}'><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property='IsHighlighted' Value='True'><Setter TargetName='Item' Property='Background' Value='#304756'/></Trigger><Trigger Property='IsSelected' Value='True'><Setter TargetName='Item' Property='Background' Value='#37583F'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+      <Setter Property='Foreground' Value='#E9EDF2'/><Setter Property='Padding' Value='10,8'/>
+      <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ComboBoxItem'><Border x:Name='Item' Background='Transparent' CornerRadius='4' Padding='{TemplateBinding Padding}'><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property='IsHighlighted' Value='True'><Setter TargetName='Item' Property='Background' Value='#2D3A4A'/></Trigger><Trigger Property='IsSelected' Value='True'><Setter TargetName='Item' Property='Background' Value='#304A64'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style TargetType='ComboBox'>
-      <Setter Property='Foreground' Value='#EDF4F3'/><Setter Property='FontSize' Value='11'/><Setter Property='IsTextSearchEnabled' Value='True'/>
+      <Setter Property='Foreground' Value='#EDF1F7'/><Setter Property='FontSize' Value='12'/><Setter Property='IsTextSearchEnabled' Value='True'/>
       <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ComboBox'><Grid>
-        <ToggleButton Focusable='False' Foreground='#EDF4F3' IsChecked='{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}'>
-          <ToggleButton.Template><ControlTemplate TargetType='ToggleButton'><Border Background='#203340' BorderBrush='#405565' BorderThickness='1' CornerRadius='5' Padding='10,10'><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='18'/></Grid.ColumnDefinitions><ContentPresenter Content='{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}' ContentTemplate='{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}' TextElement.Foreground='#EDF4F3'/><TextBlock Grid.Column='1' Text='▾' HorizontalAlignment='Right' Foreground='#B8EB7E'/></Grid></Border></ControlTemplate></ToggleButton.Template>
+        <ToggleButton Focusable='False' IsChecked='{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}'>
+          <ToggleButton.Template><ControlTemplate TargetType='ToggleButton'><Border Background='#202B38' BorderBrush='#35404E' BorderThickness='1' CornerRadius='7' Padding='10,8'><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='16'/></Grid.ColumnDefinitions><ContentPresenter Content='{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}' ContentTemplate='{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}' TextElement.Foreground='#EDF1F7'/><TextBlock Grid.Column='1' Text='⌄' HorizontalAlignment='Right' Foreground='#A4B4C8'/></Grid></Border></ControlTemplate></ToggleButton.Template>
         </ToggleButton>
-        <Popup x:Name='PART_Popup' IsOpen='{TemplateBinding IsDropDownOpen}' Placement='Bottom' AllowsTransparency='True' Focusable='False'><Border Background='#1B2B37' BorderBrush='#405565' BorderThickness='1' MinWidth='{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}' MaxHeight='430'><ScrollViewer VerticalScrollBarVisibility='Auto'><ItemsPresenter KeyboardNavigation.DirectionalNavigation='Contained'/></ScrollViewer></Border></Popup>
+        <Popup x:Name='PART_Popup' IsOpen='{TemplateBinding IsDropDownOpen}' Placement='Bottom' AllowsTransparency='True' Focusable='False'><Border Background='#1D2733' BorderBrush='#35404E' BorderThickness='1' CornerRadius='7' Padding='3' MinWidth='{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}' MaxHeight='430'><ScrollViewer VerticalScrollBarVisibility='Auto'><ItemsPresenter KeyboardNavigation.DirectionalNavigation='Contained'/></ScrollViewer></Border></Popup>
       </Grid></ControlTemplate></Setter.Value></Setter>
+      <Style.Triggers><Trigger Property='IsEnabled' Value='False'><Setter Property='Opacity' Value='0.5'/></Trigger></Style.Triggers>
+    </Style>
+    <Style TargetType='ScrollBar'>
+      <Setter Property='Width' Value='6'/><Setter Property='Background' Value='Transparent'/><Setter Property='Focusable' Value='False'/>
+      <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ScrollBar'>
+        <Grid Background='Transparent'><Track x:Name='PART_Track' Orientation='{TemplateBinding Orientation}' IsDirectionReversed='True' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{TemplateBinding Value}' ViewportSize='{TemplateBinding ViewportSize}'>
+          <Track.DecreaseRepeatButton><RepeatButton x:Name='Decrease' Focusable='False' Command='{x:Static ScrollBar.PageUpCommand}'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+          <Track.Thumb><Thumb x:Name='ScrollThumb' MinHeight='24' MinWidth='4' Background='#596A80'><Thumb.Template><ControlTemplate TargetType='Thumb'><Border x:Name='Grip' Background='{TemplateBinding Background}' CornerRadius='3' Opacity='0.6'/><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='Grip' Property='Opacity' Value='1'/></Trigger><Trigger Property='IsDragging' Value='True'><Setter TargetName='Grip' Property='Opacity' Value='1'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+          <Track.IncreaseRepeatButton><RepeatButton x:Name='Increase' Focusable='False' Command='{x:Static ScrollBar.PageDownCommand}'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Background='Transparent'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
+        </Track></Grid>
+        <ControlTemplate.Triggers><Trigger Property='Orientation' Value='Horizontal'><Setter TargetName='PART_Track' Property='IsDirectionReversed' Value='False'/><Setter TargetName='ScrollThumb' Property='MinHeight' Value='4'/><Setter TargetName='ScrollThumb' Property='MinWidth' Value='24'/><Setter TargetName='Decrease' Property='Command' Value='{x:Static ScrollBar.PageLeftCommand}'/><Setter TargetName='Increase' Property='Command' Value='{x:Static ScrollBar.PageRightCommand}'/></Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+      <Style.Triggers><Trigger Property='Orientation' Value='Horizontal'><Setter Property='Width' Value='Auto'/><Setter Property='Height' Value='6'/></Trigger></Style.Triggers>
     </Style>
   </Grid.Resources>
-  <Grid.RowDefinitions><RowDefinition Height='50'/><RowDefinition Height='68'/><RowDefinition Height='*'/><RowDefinition Height='30'/></Grid.RowDefinitions>
-  <DockPanel Grid.Row='0' LastChildFill='False'>
-    <StackPanel DockPanel.Dock='Left' Orientation='Horizontal'><Border Background='#B8EB7E' CornerRadius='5' Width='30' Height='30' VerticalAlignment='Top'><TextBlock Text='S' Foreground='#15251B' FontSize='20' FontWeight='Bold' HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><TextBlock Text='SQUAD TOOLS' FontWeight='SemiBold' FontSize='16' Margin='12,4,22,0'/><Button x:Name='MortarTab' Content='射击计算' Background='#37583F' Padding='16,7' VerticalAlignment='Top' Margin='0,0,8,0'/><Button x:Name='RaasTab' Content='RAAS 猜点' Padding='16,7' VerticalAlignment='Top' Margin='0,0,8,0'/><Button x:Name='ServerTab' Content='服务器列表' Padding='16,7' VerticalAlignment='Top'/></StackPanel>
-    <StackPanel DockPanel.Dock='Right' Orientation='Horizontal'><Border Background='#172D24' CornerRadius='12' Padding='12,5' VerticalAlignment='Top' Margin='0,0,18,0'><TextBlock x:Name='ModeBadge' Text='●  离线可用' Foreground='#B8EB7E' FontSize='11'/></Border><CheckBox x:Name='Pin' Content='窗口置顶' Foreground='#B5C5CC' VerticalAlignment='Top' Margin='0,6,18,0'/><Button x:Name='Help' Content='使用说明' Padding='11,6' VerticalAlignment='Top'/></StackPanel>
+  <Grid.RowDefinitions><RowDefinition Height='50'/><RowDefinition Height='68'/><RowDefinition Height='*'/><RowDefinition Height='26'/></Grid.RowDefinitions>
+  <DockPanel LastChildFill='False'>
+    <StackPanel DockPanel.Dock='Left' Orientation='Horizontal'><TextBlock Text='SQUAD TOOLS' FontWeight='SemiBold' FontSize='15' Margin='0,9,24,0'/><Border Background='#1B2531' CornerRadius='11' Padding='3' VerticalAlignment='Top'><StackPanel Orientation='Horizontal'><Button x:Name='MortarTab' Content='射击计算' Background='#304A64' Padding='16,7'/><Button x:Name='RaasTab' Content='RAAS 猜点' Background='Transparent' Padding='16,7'/><Button x:Name='ServerTab' Content='服务器' Background='Transparent' Padding='16,7'/></StackPanel></Border></StackPanel>
+    <StackPanel DockPanel.Dock='Right' Orientation='Horizontal'><TextBlock x:Name='ModeBadge' Text='离线可用' Foreground='#9FAEC0' FontSize='11' Margin='0,11,18,0'/><CheckBox x:Name='Pin' Content='置顶' Foreground='#A6B2C1' VerticalAlignment='Top' Margin='0,9,16,0'/><Button x:Name='Help' Content='帮助' Background='Transparent' Padding='10,8' VerticalAlignment='Top'/></StackPanel>
   </DockPanel>
-  <StackPanel x:Name='MortarHeading' Grid.Row='1'><TextBlock x:Name='PageTitle' Text='射击计算器' FontSize='27' FontWeight='SemiBold'/><TextBlock x:Name='PageDescription' Text='选择武器，标记炮位与目标，计算方位、仰角与飞行时间。' Foreground='#8298A8' Margin='0,7,0,0' FontSize='12'/></StackPanel>
+  <StackPanel x:Name='MortarHeading' Grid.Row='1'><TextBlock x:Name='PageTitle' Text='射击计算' FontSize='25' FontWeight='SemiBold'/><TextBlock x:Name='PageDescription' Text='点选地图，或输入坐标。' Foreground='#8F9EAF' Margin='0,6,0,0' FontSize='12'/></StackPanel>
   <Grid x:Name='MortarBody' Grid.Row='2'>
-    <Grid.ColumnDefinitions><ColumnDefinition Width='300'/><ColumnDefinition Width='18'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
-    <Border Background='#14212C' BorderBrush='#283B49' BorderThickness='1' CornerRadius='8' Padding='20,17'>
+    <Grid.ColumnDefinitions><ColumnDefinition Width='318'/><ColumnDefinition Width='18'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
+    <Border x:Name='Sidebar' Background='#171F29' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13' Padding='18'>
       <Grid><Border x:Name='RaasHost' Visibility='Collapsed'/>
       <Grid x:Name='FireControls'><Grid.RowDefinitions><RowDefinition Height='*'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
-      <ScrollViewer VerticalScrollBarVisibility='Auto' HorizontalScrollBarVisibility='Disabled'>
-      <StackPanel>
-        <Grid Margin='0,0,0,7'><Grid.ColumnDefinitions><ColumnDefinition Width='70'/><ColumnDefinition Width='8'/><ColumnDefinition/></Grid.ColumnDefinitions><ComboBox x:Name='WeaponCategory'/><ComboBox x:Name='WeaponSelector' Grid.Column='2'/></Grid>
-        <ComboBox x:Name='ShellSelector' Margin='0,0,0,5'/>
-        <TextBlock x:Name='WeaponInfo' Foreground='#8196A5' FontSize='10' TextWrapping='Wrap' Margin='0,0,0,10'/>
-        <TextBlock Text='游戏地图' FontSize='12' Foreground='#A0B2BE' Margin='0,0,0,7'/><ComboBox x:Name='MapSelector' Margin='0,0,0,7'/>
-        <TextBlock x:Name='ServerMapNote' Foreground='#8196A5' FontSize='10' TextWrapping='Wrap' MaxHeight='32' TextTrimming='CharacterEllipsis' Margin='0,0,0,5'/><Button x:Name='StopServerFollow' Content='停止跟随服务器地图' Visibility='Collapsed' Margin='0,0,0,7'/>
-        <TextBlock Text='M   炮位坐标' Foreground='#B8EB7E' FontSize='12' Margin='0,0,0,7'/><TextBox x:Name='WeaponGrid' Text='D05-5-5' ToolTip='例如 D05-5-5，字母为列、数字为行'/>
-        <TextBlock Text='T    目标坐标' Foreground='#FFA88C' FontSize='12' Margin='0,10,0,7'/><TextBox x:Name='TargetGrid' Text='F06-5-5'/>
-        <TextBlock Text='点击精确定位 · 手输按小格中心计算' Foreground='#728A9B' FontSize='10' Margin='0,7,0,10'/>
-        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition/></Grid.ColumnDefinitions>
-          <StackPanel><TextBlock Text='炮位地面高 / m' FontSize='11' Foreground='#A0B2BE' Margin='0,0,0,7'/><TextBox x:Name='WeaponHeight' Text='0'/></StackPanel>
-          <StackPanel Grid.Column='2'><TextBlock Text='目标地面高 / m' FontSize='11' Foreground='#A0B2BE' Margin='0,0,0,7'/><TextBox x:Name='TargetHeight' Text='0'/></StackPanel>
-        </Grid>
-        <CheckBox x:Name='AutomaticHeight' Content='自动读取地形高程' Foreground='#B8EB7E' FontSize='11' Margin='0,11,0,0'/>
-        <TextBlock x:Name='HeightHint' Text='高差需手动填写，另计炮口高 1m。' Foreground='#8196A5' FontSize='10' Margin='0,5,0,10'/>
-      </StackPanel>
+      <ScrollViewer x:Name='InputScroll' VerticalScrollBarVisibility='Auto' HorizontalScrollBarVisibility='Disabled' Padding='0,0,8,0'>
+        <StackPanel>
+          <TextBlock Text='武器' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/>
+          <Grid Margin='0,0,0,8'><Grid.ColumnDefinitions><ColumnDefinition Width='66'/><ColumnDefinition Width='8'/><ColumnDefinition/></Grid.ColumnDefinitions><ComboBox x:Name='WeaponCategory'/><ComboBox x:Name='WeaponSelector' Grid.Column='2' ToolTipService.ShowDuration='20000'/></Grid>
+          <ComboBox x:Name='ShellSelector' Margin='0,0,0,8'><ComboBox.Style><Style TargetType='ComboBox' BasedOn='{StaticResource {x:Type ComboBox}}'><Style.Triggers><Trigger Property='IsEnabled' Value='False'><Setter Property='Visibility' Value='Collapsed'/></Trigger></Style.Triggers></Style></ComboBox.Style></ComboBox>
+          <TextBlock x:Name='WeaponInfo' Visibility='Collapsed'/>
+          <TextBlock Text='地图' FontSize='11' Foreground='#96A5B6' Margin='0,10,0,8'/><ComboBox x:Name='MapSelector'/>
+          <Grid Margin='0,7,0,0'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions><TextBlock x:Name='ServerMapNote' Foreground='#91A6BE' FontSize='10' VerticalAlignment='Center' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, RelativeSource={RelativeSource Self}}'/><Button x:Name='StopServerFollow' Grid.Column='1' Content='停止跟随' Background='Transparent' Visibility='Collapsed' Padding='7,3'/></Grid>
+          <Grid Margin='0,18,0,0'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <StackPanel><TextBlock Text='炮位' Foreground='#ADCDF9' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='WeaponGrid' Text='D05-5-5' ToolTip='在地图双击右键，或输入网格坐标。'/></StackPanel>
+            <StackPanel Grid.Column='2'><TextBlock Text='目标' Foreground='#E4B6A4' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='TargetGrid' Text='F06-5-5' ToolTip='在地图左键点选，或输入网格坐标。'/></StackPanel>
+          </Grid>
+          <CheckBox x:Name='AutomaticHeight' Content='自动高程' Margin='0,18,0,12' ToolTip='{Binding Text, ElementName=HeightHint}'/>
+          <Grid x:Name='HeightInputs' Margin='0,0,0,14'><Grid.Style><Style TargetType='Grid'><Setter Property='Visibility' Value='Collapsed'/><Style.Triggers><DataTrigger Binding='{Binding IsChecked, ElementName=AutomaticHeight}' Value='False'><Setter Property='Visibility' Value='Visible'/></DataTrigger></Style.Triggers></Style></Grid.Style><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <StackPanel><TextBlock Text='炮位高程 · m' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/><TextBox x:Name='WeaponHeight' Text='0'/></StackPanel>
+            <StackPanel Grid.Column='2'><TextBlock Text='目标高程 · m' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/><TextBox x:Name='TargetHeight' Text='0'/></StackPanel>
+          </Grid>
+          <TextBlock x:Name='HeightHint' Visibility='Collapsed'/>
+        </StackPanel>
       </ScrollViewer>
-      <StackPanel Grid.Row='1'>
-        <Border Height='1' Background='#2B3C49'/>
-        <TextBlock Text='射击诸元' FontSize='15' FontWeight='SemiBold' Margin='0,12,0,8'/>
+      <StackPanel x:Name='ResultPanel' Grid.Row='1' Margin='0,10,0,0'>
+        <Border Height='1' Background='#2C3745' Margin='0,0,0,16'/>
         <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-          <StackPanel><TextBlock Text='方位角 / AZIMUTH' FontSize='10' Foreground='#879EAE'/><TextBlock x:Name='Bearing' Text='—' FontSize='29' FontWeight='SemiBold' Margin='0,7,0,0'/></StackPanel>
-          <StackPanel Grid.Column='1'><TextBlock x:Name='ElevationLabel' Text='高抛密位 / MIL' FontSize='10' Foreground='#879EAE'/><TextBlock x:Name='Elevation' Text='—' Foreground='#B8EB7E' FontSize='33' FontWeight='SemiBold' Margin='0,3,0,0'/></StackPanel>
+          <StackPanel><TextBlock Text='方位角' FontSize='11' Foreground='#96A5B6'/><TextBlock x:Name='Bearing' Text='—' FontSize='30' FontWeight='Medium' Margin='0,7,0,0'/></StackPanel>
+          <StackPanel Grid.Column='1'><TextBlock x:Name='ElevationLabel' Text='高抛密位 / MIL' FontSize='11' Foreground='#96A5B6'/><TextBlock x:Name='Elevation' Text='—' Foreground='#ADCDF9' FontSize='33' FontWeight='Medium' Margin='0,4,0,0'/></StackPanel>
         </Grid>
-        <TextBlock x:Name='Status' TextWrapping='Wrap' FontSize='11' Margin='0,7,0,10' Foreground='#B8EB7E'/>
-        <DockPanel Margin='0,0,0,8'><TextBlock Text='水平距离' Foreground='#91A5B4' FontSize='12'/><TextBlock x:Name='Distance' Text='—' HorizontalAlignment='Right'/></DockPanel>
-        <DockPanel Margin='0,0,0,8'><TextBlock Text='地面高差' Foreground='#91A5B4' FontSize='12'/><TextBlock x:Name='Difference' Text='—' HorizontalAlignment='Right'/></DockPanel>
-        <DockPanel Margin='0,0,0,14'><TextBlock Text='理论飞行时间' Foreground='#91A5B4' FontSize='12'/><TextBlock x:Name='Flight' Text='—' HorizontalAlignment='Right'/></DockPanel>
-        <TextBlock x:Name='TerrainNote' Text='本地地图与地形高程' Foreground='#91A5B4' TextWrapping='Wrap' FontSize='10'/>
+        <TextBlock x:Name='Status' TextWrapping='Wrap' FontSize='11' Margin='0,10,0,18' Foreground='#A9BDCF'/>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+          <StackPanel><TextBlock Text='距离' FontSize='10' Foreground='#96A5B6'/><TextBlock x:Name='Distance' Text='—' FontSize='13' Margin='0,7,0,0'/></StackPanel>
+          <StackPanel Grid.Column='1' ToolTip='{Binding Text, ElementName=TerrainNote}'><TextBlock Text='高差' FontSize='10' Foreground='#96A5B6'/><TextBlock x:Name='Difference' Text='—' FontSize='13' Margin='0,7,0,0'/></StackPanel>
+          <StackPanel Grid.Column='2'><TextBlock Text='飞行时间' FontSize='10' Foreground='#96A5B6'/><TextBlock x:Name='Flight' Text='—' FontSize='13' Margin='0,7,0,0'/></StackPanel>
+        </Grid>
+        <TextBlock x:Name='TerrainNote' Visibility='Collapsed'/>
       </StackPanel>
-      </Grid>
-      </Grid>
+      </Grid></Grid>
     </Border>
-    <Border Grid.Column='2' Background='#101B24' BorderBrush='#283B49' BorderThickness='1' CornerRadius='8'>
-      <Grid><Grid.RowDefinitions><RowDefinition Height='56'/><RowDefinition Height='*'/><RowDefinition Height='56'/></Grid.RowDefinitions>
-        <DockPanel Margin='16,0' LastChildFill='False'><StackPanel DockPanel.Dock='Left' Orientation='Horizontal' VerticalAlignment='Center'><StackPanel Width='230' Margin='0,0,16,0'><TextBlock x:Name='MapName' Text='离线坐标网格' FontWeight='SemiBold' TextTrimming='CharacterEllipsis'/><TextBlock x:Name='MapInfo' Foreground='#8196A5' FontSize='10' Margin='0,4,0,0'/></StackPanel><RadioButton x:Name='PlaceTarget' Content='放目标' IsChecked='True' GroupName='Mode'/><RadioButton x:Name='PlaceMortar' Content='放炮位' GroupName='Mode'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ZoomOut' Content='−' Padding='11,5' Margin='0,0,5,0'/><Button x:Name='ZoomIn' Content='+' Padding='11,5' Margin='0,0,5,0'/><Button x:Name='ResetView' Content='全图' Padding='10,5'/></StackPanel></DockPanel>
-        <Border Grid.Row='1' x:Name='MapHost' BorderBrush='#283B49' BorderThickness='0,1'/>
-        <Grid Grid.Row='2' Margin='16,10'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions>
-          <TextBlock x:Name='MapGestureHint' Text='左键目标 · 右键拖动 · 右键双击炮位 · 滚轮缩放' TextWrapping='Wrap' Margin='0,0,12,0' Foreground='#728A9B' FontSize='11' VerticalAlignment='Center'/>
-          <StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ClearMap' Content='空白网格' Margin='0,0,8,0'/><Button x:Name='ImportMap' Content='导入自定义图片'/></StackPanel>
+    <Border Grid.Column='2' Background='#101B24' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13'>
+      <Grid><Grid.RowDefinitions><RowDefinition Height='52'/><RowDefinition Height='*'/><RowDefinition Height='48'/></Grid.RowDefinitions>
+        <DockPanel Margin='16,0' LastChildFill='False'><StackPanel DockPanel.Dock='Left' Orientation='Horizontal' VerticalAlignment='Center'><StackPanel Width='166' Margin='0,0,12,0'><TextBlock x:Name='MapName' Text='离线坐标网格' FontSize='13' FontWeight='Medium' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, ElementName=MapInfo}'/><TextBlock x:Name='MapInfo' Visibility='Collapsed'/></StackPanel><RadioButton x:Name='PlaceTarget' Content='目标' IsChecked='True' GroupName='Mode'/><RadioButton x:Name='PlaceMortar' Content='炮位' GroupName='Mode'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ZoomOut' Content='−' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ZoomIn' Content='+' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ResetView' Content='全图' Padding='10,4'/></StackPanel></DockPanel>
+        <Border Grid.Row='1' x:Name='MapHost' BorderBrush='#2A3441' BorderThickness='0,1'/>
+        <Grid Grid.Row='2' Margin='16,7'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions>
+          <TextBlock x:Name='MapGestureHint' Text='左键目标 · 右键双击炮位' TextTrimming='CharacterEllipsis' ToolTip='按住右键或中键拖动；滚轮缩放。' Margin='0,0,10,0' Foreground='#8192A5' FontSize='10' VerticalAlignment='Center'/>
+          <StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ClearMap' Content='空白地图' Background='Transparent' Padding='9,5' Margin='0,0,4,0'/><Button x:Name='ImportMap' Content='导入地图' Padding='10,5'/></StackPanel>
         </Grid>
       </Grid>
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-  <DockPanel Grid.Row='3' VerticalAlignment='Bottom'><TextBlock Text='SQUAD 游戏辅助工具  /  0.5.1 预览版' Foreground='#607B8E' FontSize='10'/><TextBlock Text='迫击炮离线可用 · 服务器按需联网' Foreground='#607B8E' FontSize='10' HorizontalAlignment='Right'/></DockPanel>
+  <TextBlock Grid.Row='3' Text='Squad Tools · 0.6.0 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 
