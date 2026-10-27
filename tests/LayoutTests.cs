@@ -59,6 +59,10 @@ internal static class LayoutTests
                 Check(Bounds((FrameworkElement)root.FindName("Bearing"),results).Right<=Bounds((FrameworkElement)root.FindName("Elevation"),results).Left+1,"bearing and elevation do not overlap");
                 Check(scroll.ComputedHorizontalScrollBarVisibility==Visibility.Collapsed,"shooting inputs do not require horizontal scrolling");
                 if(size.Height>=850) Check(scroll.ScrollableHeight<1,"normal-size input panel fits without scrolling: "+weapon.Id+" / "+manual+" / "+scroll.ScrollableHeight);
+                if(scroll.ScrollableHeight<1) {
+                    double gap=Bounds(results,sidebar).Top-Bounds(scroll,sidebar).Top-scroll.ExtentHeight;
+                    Check(gap>=-1 && gap<=24,"results follow inputs without a stretched blank band: "+weapon.Id+" / "+size+" / "+manual+" / "+gap);
+                }
                 if(manual) {
                     scroll.ScrollToEnd(); Pump(window); Inside(Field<TextBox>(window,"weaponHeight"),scroll,"manual weapon height is reachable"); Inside(Field<TextBox>(window,"targetHeight"),scroll,"manual target height is reachable");
                 }

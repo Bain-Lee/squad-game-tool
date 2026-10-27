@@ -141,6 +141,7 @@ namespace SquadTools
             ((Button)root.FindName("RaasTab")).Background = new SolidColorBrush(!selected && raasMode ? Color.FromRgb(48,74,100) : Colors.Transparent);
             ((UIElement)root.FindName("FireControls")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             ((UIElement)root.FindName("RaasHost")).Visibility=raasMode?Visibility.Visible:Visibility.Collapsed;
+            ((Border)root.FindName("Sidebar")).VerticalAlignment=raasMode?VerticalAlignment.Stretch:VerticalAlignment.Top;
             ((TextBlock)root.FindName("PageTitle")).Text=raasMode?"RAAS 猜点":"射击计算";
             ((TextBlock)root.FindName("PageDescription")).Text=raasMode?"确认已知旗点，查看下一点。":"点选地图，或输入坐标。";
             ((RadioButton)root.FindName("PlaceTarget")).Visibility=((RadioButton)root.FindName("PlaceMortar")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
@@ -752,7 +753,7 @@ namespace SquadTools
   <StackPanel x:Name='MortarHeading' Grid.Row='1'><TextBlock x:Name='PageTitle' Text='射击计算' FontSize='25' FontWeight='SemiBold'/><TextBlock x:Name='PageDescription' Text='点选地图，或输入坐标。' Foreground='#8F9EAF' Margin='0,6,0,0' FontSize='12'/></StackPanel>
   <Grid x:Name='MortarBody' Grid.Row='2'>
     <Grid.ColumnDefinitions><ColumnDefinition Width='318'/><ColumnDefinition Width='18'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
-    <Border x:Name='Sidebar' Background='#171F29' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13' Padding='18'>
+    <Border x:Name='Sidebar' Background='#171F29' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13' Padding='18' VerticalAlignment='Top'>
       <Grid><Border x:Name='RaasHost' Visibility='Collapsed'/>
       <Grid x:Name='FireControls'><Grid.RowDefinitions><RowDefinition Height='*'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
       <ScrollViewer x:Name='InputScroll' VerticalScrollBarVisibility='Auto' HorizontalScrollBarVisibility='Disabled' Padding='0,0,8,0'>
@@ -803,7 +804,7 @@ namespace SquadTools
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-  <TextBlock Grid.Row='3' Text='Squad Tools · 0.6.0 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
+  <TextBlock Grid.Row='3' Text='Squad Tools · 0.6.1 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 
