@@ -78,6 +78,7 @@ namespace SquadTools
         public readonly RaasLayer Layer;
         public readonly RaasSolver Solver;
         public readonly List<RaasPoint> Confirmed = new List<RaasPoint>();
+        public readonly HashSet<RaasPoint> Automatic = new HashSet<RaasPoint>();
         public RaasPoint Main { get; private set; }
         public bool Reverse { get; private set; }
         public RaasResult Result { get; private set; }
@@ -89,7 +90,7 @@ namespace SquadTools
         public void ChooseMain(RaasPoint main)
         {
             if (!Layer.Mains.Contains(main)) throw new ArgumentException("请选择本图层的主基地。");
-            Main=main; Reverse=main.Id==Solver.End; Confirmed.Clear(); Recalculate();
+            Main=main; Reverse=main.Id==Solver.End; Confirmed.Clear(); Automatic.Clear(); Recalculate();
         }
         public bool Confirm(RaasPoint flag)
         {
@@ -98,8 +99,25 @@ namespace SquadTools
             var next=Solver.Solve(constraints,Reverse); if(next.Alive==0) return false;
             Confirmed.Add(flag); Result=next; return true;
         }
-        public void Undo() { if(Confirmed.Count>0) Confirmed.RemoveAt(Confirmed.Count-1); Recalculate(); }
-        public void Reset() { Confirmed.Clear(); Recalculate(); }
+        public RaasResult Preview(RaasPoint flag)
+        {
+            if (Main==null || Complete || flag==null || !Layer.Flags.Contains(flag) || Confirmed.Contains(flag) || Result.Chance(flag,NextStep)<=0) return null;
+            var constraints=Constraints(); constraints.Add(new RaasConstraint{Ids=flag.CandidateIds,Step=NextStep});
+            var preview=Solver.Solve(constraints,Reverse); return preview.Alive>0?preview:null;
+        }
+        public int AdvanceUnique()
+        {
+            int added=0;
+            while(Main!=null && !Complete && added<Layer.Flags.Count) {
+                var candidates=Layer.Flags.Where(f=>!Confirmed.Contains(f) && Result.Chance(f,NextStep)>0).Take(2).ToList();
+                // A single physical point can contain several source candidate IDs.
+                if(candidates.Count!=1 || Result.Chance(candidates[0],NextStep)<1-1e-9 || !Confirm(candidates[0])) break;
+                Automatic.Add(candidates[0]); added++;
+            }
+            return added;
+        }
+        public void Undo() { if(Confirmed.Count>0) { Automatic.Remove(Confirmed[Confirmed.Count-1]); Confirmed.RemoveAt(Confirmed.Count-1); } Recalculate(); }
+        public void Reset() { Confirmed.Clear(); Automatic.Clear(); Recalculate(); }
     }
     public sealed class RaasMarker
     {
@@ -109,5 +127,6 @@ namespace SquadTools
         public bool Clickable;
         public int ConfirmedStep;
         public bool SelectedMain;
+        public bool IsPreview, Automatic;
     }
 }

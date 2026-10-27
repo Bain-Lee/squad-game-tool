@@ -23,6 +23,11 @@ namespace SquadTools
         private ComboBox mapSelector, weaponCategory, weaponSelector, shellSelector;
         private TextBlock weaponInfo, serverMapNote;
         private Button stopServerFollow;
+        private ComboBox arcSelector;
+        private CheckBox spreadDisplay, damageDisplay;
+        private Button trajectoryButton;
+        private TrajectoryWindow trajectoryWindow;
+        private bool restoredRaasAuto = true;
         private WeaponDefinition selectedWeapon = WeaponCatalog.Default;
         private ShellDefinition selectedShell = WeaponCatalog.Default.Shells[0];
         private string restoredWeaponId = "mortar", restoredShellId = "default", followedServerId;
@@ -79,6 +84,11 @@ namespace SquadTools
             mapSelector = (ComboBox)root.FindName("MapSelector");
             weaponCategory = (ComboBox)root.FindName("WeaponCategory"); weaponSelector = (ComboBox)root.FindName("WeaponSelector"); shellSelector = (ComboBox)root.FindName("ShellSelector");
             weaponInfo = (TextBlock)root.FindName("WeaponInfo"); serverMapNote = (TextBlock)root.FindName("ServerMapNote"); stopServerFollow = (Button)root.FindName("StopServerFollow");
+            arcSelector=(ComboBox)root.FindName("ArcSelector");
+            spreadDisplay=(CheckBox)root.FindName("SpreadDisplay"); damageDisplay=(CheckBox)root.FindName("DamageDisplay"); trajectoryButton=(Button)root.FindName("TrajectoryButton");
+            arcSelector.SelectionChanged+=delegate { if(!loading) Recalculate(); };
+            foreach(var check in new[]{spreadDisplay,damageDisplay}) { check.Checked+=delegate { if(!loading) Recalculate(); }; check.Unchecked+=delegate { if(!loading) Recalculate(); }; }
+            trajectoryButton.Click+=delegate { ShowTrajectory(); };
             weaponCategory.ItemsSource = new[] { "工事", "载具" };
             weaponCategory.SelectionChanged += delegate { if (!loading) SelectWeapon(WeaponCatalog.All.First(w => w.Category == (string)weaponCategory.SelectedItem).Id, null); };
             weaponSelector.SelectionChanged += delegate { if (!loading && weaponSelector.SelectedItem != null) SelectWeapon(((WeaponDefinition)weaponSelector.SelectedItem).Id, null); };
@@ -141,6 +151,8 @@ namespace SquadTools
             ((TextBlock)root.FindName("PageDescription")).Text=raasMode?"确认已知旗点，查看下一点。":"点选地图，或输入坐标。";
             ((RadioButton)root.FindName("PlaceTarget")).Visibility=((RadioButton)root.FindName("PlaceMortar")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             map.PredictionMode=raasMode;
+            ((UIElement)root.FindName("ShootingDisplay")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
+            if(raasView!=null) raasView.PreviewPoint(null);
             ((TextBlock)root.FindName("MapGestureHint")).Text=raasMode?"点选旗点确认":"左键目标 · 右键双击炮位";
             if(raasMode) EnsureRaasView();
             if(!selected) {
@@ -157,9 +169,11 @@ namespace SquadTools
                     var repository=new RaasRepository(layersDirectory);
                     if(mapChoices.Any(c=>c.Definition!=null && c.Definition.SourceCommit!=repository.SourceCommit)) throw new FormatException("RAAS 数据与底图标定版本不一致，请更新完整数据包。");
                     raasView=new RaasView(repository);
+                    raasView.AutoComplete=restoredRaasAuto;
                     ((Border)((FrameworkElement)Content).FindName("RaasHost")).Child=raasView;
                     raasView.MarkersChanged+=map.SetPredictionMarkers;
                     map.PredictionPointClicked+=raasView.ClickPoint;
+                    map.PredictionPointHovered+=raasView.PreviewPoint;
                     raasView.MapRequested+=delegate(string id) {
                         var choice=mapChoices.Find(c=>c.Id==id); if(choice==null) return;
                         if(mapSelector.SelectedItem==choice) { if(CanFollowRaas()) StopServerFollow(); currentLayerRawName=null; UpdateRaasMap(); }
@@ -399,18 +413,18 @@ namespace SquadTools
                 bearing.Text = solution.BearingDegrees.ToString("F1", CultureInfo.InvariantCulture) + "°";
                 distance.Text = solution.Distance.ToString("F1") + " m";
                 difference.Text = solution.HeightDifference.ToString("+0.0;-0.0;0.0") + " m";
-                if (solution.HighUsable || solution.LowUsable)
+                if (HasSelectedSolution)
                 {
                     elevation.Text = selectedWeapon.FormatElevation(SelectedMil);
                     flight.Text = SelectedTime.ToString("F1") + " s";
-                    elevationLabel.Text = (solution.SelectedHigh ? "高抛" : "低抛") + unitLabel;
-                    status.Text = (solution.SelectedHigh ? "高抛解可用 · " : solution.HighUsable ? "低抛解可用 · " : "仅低抛解可用 · ") + (automatic ? "自动地形高差" : "手动地面高差");
+                    elevationLabel.Text = (SelectedHigh ? "高抛" : "低抛") + unitLabel;
+                    status.Text = (SelectedHigh ? "高抛解可用 · " : solution.HighUsable ? "低抛解可用 · " : "仅低抛解可用 · ") + (automatic ? "自动地形高差" : "手动地面高差");
                     status.Foreground = new SolidColorBrush(Color.FromRgb(169,189,207));
                 }
                 else
                 {
                     elevation.Text = "—"; flight.Text = "—";
-                    status.Text = solution.Message;
+                    status.Text = solution.HighUsable || solution.LowUsable ? "所选"+(ArcMode==ArcPreference.High?"高抛":"低抛")+"解不可用，请切换自动或另一弹道。" : solution.Message;
                     status.Foreground = new SolidColorBrush(Color.FromRgb(255, 168, 140));
                 }
             }
@@ -427,7 +441,7 @@ namespace SquadTools
                 weaponGrid.ToolTip = "请输入有效网格坐标；在地图点击可精确定位。";
                 targetGrid.ToolTip = "请输入有效网格坐标；在地图点击可精确定位。";
             }
-            map.InvalidateVisual();
+            UpdateShotAnalysis(); map.InvalidateVisual();
         }
 
         private static bool InsideMap(Vec2 position, double width, double height)
@@ -440,8 +454,53 @@ namespace SquadTools
             return string.Format(CultureInfo.InvariantCulture, "{0}：东 {1:F2}m，南 {2:F2}m。{3}", precise ? "实际点击位置" : "网格中心", position.X, position.Y, precise ? "框内网格为参考，计算保留实际点位。" : "按最末级小格中心计算。");
         }
 
-        private double SelectedMil { get { return solution.SelectedHigh ? solution.HighMil : solution.LowMil; } }
-        private double SelectedTime { get { return solution.SelectedHigh ? solution.HighTimeSeconds : solution.LowTimeSeconds; } }
+        private ArcPreference ArcMode { get { return (ArcPreference)Math.Max(0,arcSelector.SelectedIndex); } }
+        private bool HasSelectedSolution { get { bool high; return solution!=null && solution.TrySelectArc(ArcMode,out high); } }
+        private bool SelectedHigh { get { bool high; solution.TrySelectArc(ArcMode,out high); return high; } }
+        private double SelectedMil { get { return SelectedHigh ? solution.HighMil : solution.LowMil; } }
+        private double SelectedTime { get { return SelectedHigh ? solution.HighTimeSeconds : solution.LowTimeSeconds; } }
+
+        private void UpdateShotAnalysis()
+        {
+            ((ComboBoxItem)arcSelector.Items[1]).IsEnabled=solution!=null && solution.HighUsable;
+            ((ComboBoxItem)arcSelector.Items[2]).IsEnabled=solution!=null && solution.LowUsable;
+            string comparison=ArcDescription(true)+"\n"+ArcDescription(false);
+            arcSelector.ToolTip="自动按武器默认抛物线选择；手动选择失效时保留选择并清空读数。\n"+comparison;
+            ((ComboBoxItem)arcSelector.Items[1]).ToolTip=ArcDescription(true); ((ComboBoxItem)arcSelector.Items[2]).ToolTip=ArcDescription(false);
+            var footprint=HasSelectedSolution?ShotFootprint.Calculate(solution,selectedWeapon,selectedShell,SelectedHigh):null;
+            map.SetShotOverlay(footprint,spreadDisplay.IsChecked==true,damageDisplay.IsChecked==true,solution==null?0:solution.BearingDegrees);
+            string detail=footprint==null?"当前弹道没有可显示的散布或伤害范围。":string.Format(CultureInfo.InvariantCulture,
+                "理论散布半轴：沿射向 {0:F1} m，横向 {1:F1} m。\n100 伤害半径 {2:F1} m；25 伤害半径 {3:F1} m。\n基于上游模型，不计掩体，不代表保证命中或致死。",
+                footprint.AlongRadius,footprint.AcrossRadius,footprint.Damage100Radius,footprint.Damage25Radius);
+            spreadDisplay.ToolTip=damageDisplay.ToolTip=detail;
+            trajectoryButton.IsEnabled=solution!=null && (solution.HighUsable || solution.LowUsable);
+            if(trajectoryWindow!=null) UpdateTrajectory();
+        }
+        private string ArcDescription(bool high)
+        {
+            bool usable=solution!=null && (high?solution.HighUsable:solution.LowUsable);
+            return (high?"高抛":"低抛")+"："+(usable?selectedWeapon.FormatElevation(high?solution.HighMil:solution.LowMil)+(selectedWeapon.Unit=="mil"?" mil":"")+
+                " · "+(high?solution.HighTimeSeconds:solution.LowTimeSeconds).ToString("F1",CultureInfo.InvariantCulture)+" s":"不可用");
+        }
+        private void ShowTrajectory()
+        {
+            if(!trajectoryButton.IsEnabled) return;
+            if(trajectoryWindow==null) {
+                trajectoryWindow=new TrajectoryWindow { Owner=this, Width=Math.Min(940,Math.Max(640,ActualWidth-80)), Height=Math.Min(600,Math.Max(400,ActualHeight-100)) };
+                trajectoryWindow.Closed+=delegate { trajectoryWindow=null; };
+            }
+            UpdateTrajectory(); trajectoryWindow.Show(); trajectoryWindow.Activate();
+        }
+        private void UpdateTrajectory()
+        {
+            string title=mapName.Text+" · "+selectedWeapon.Name;
+            if(solution==null || !(solution.HighUsable || solution.LowUsable)) { trajectoryWindow.SetProfile(null,null,title,"当前坐标或弹道无效；已清除上一组曲线。"); return; }
+            try {
+                var profile=TrajectoryProfile.Build(map.Weapon,map.Target,Number(weaponHeight.Text,""),Number(targetHeight.Text,""),selectedWeapon,selectedShell,solution,
+                    terrain==null?null:new Func<Vec2,double>(terrain.Sample));
+                trajectoryWindow.SetProfile(profile,HasSelectedSolution?(bool?)SelectedHigh:null,title,null);
+            } catch(ArgumentException ex) { trajectoryWindow.SetProfile(null,null,title,"剖面无法生成："+ex.Message); }
+        }
 
         private void ImportMap()
         {
@@ -525,6 +584,13 @@ namespace SquadTools
                     XmlNode weaponNode = document.SelectSingleNode("/settings/weaponId"), shellNode = document.SelectSingleNode("/settings/shellId");
                     if (weaponNode != null) restoredWeaponId = weaponNode.InnerText;
                     if (shellNode != null) restoredShellId = shellNode.InnerText;
+                    int savedArc; XmlNode arcNode=document.SelectSingleNode("/settings/arcPreference");
+                    if(arcNode!=null && int.TryParse(arcNode.InnerText,out savedArc) && savedArc>=0 && savedArc<=2) arcSelector.SelectedIndex=savedArc;
+                    foreach(var entry in new[]{new {Name="showSpread",Box=spreadDisplay},new {Name="showDamage",Box=damageDisplay}}) {
+                        bool enabled; XmlNode node=document.SelectSingleNode("/settings/"+entry.Name); if(node!=null && bool.TryParse(node.InnerText,out enabled)) entry.Box.IsChecked=enabled;
+                    }
+                    bool savedAuto; XmlNode autoNode=document.SelectSingleNode("/settings/raasAutoComplete");
+                    if(autoNode!=null && bool.TryParse(autoNode.InnerText,out savedAuto)) restoredRaasAuto=savedAuto;
                     preciseWeapon = ReadPrecisePoint(document, "weapon", weaponGrid.Text);
                     preciseTarget = ReadPrecisePoint(document, "target", targetGrid.Text);
                 }
@@ -545,6 +611,9 @@ namespace SquadTools
                     string[] values = { weaponGrid.Text, targetGrid.Text, weaponHeight.Text, targetHeight.Text, customMapSize.ToString("0.##", CultureInfo.InvariantCulture), ((MapChoice)mapSelector.SelectedItem).Id };
                     for (int i = 0; i < names.Length; i++) writer.WriteElementString(names[i], values[i]);
                     writer.WriteElementString("weaponId", selectedWeapon.Id); writer.WriteElementString("shellId", selectedShell.Id);
+                    writer.WriteElementString("arcPreference",arcSelector.SelectedIndex.ToString(CultureInfo.InvariantCulture));
+                    writer.WriteElementString("showSpread",(spreadDisplay.IsChecked==true).ToString()); writer.WriteElementString("showDamage",(damageDisplay.IsChecked==true).ToString());
+                    writer.WriteElementString("raasAutoComplete",(raasView==null?restoredRaasAuto:raasView.AutoComplete).ToString());
                     WritePrecisePoint(writer, "weapon", preciseWeapon);
                     WritePrecisePoint(writer, "target", preciseTarget);
                     writer.WriteEndElement();
@@ -771,7 +840,8 @@ namespace SquadTools
         </StackPanel>
       </ScrollViewer>
       <StackPanel x:Name='ResultPanel' Grid.Row='1' Margin='0,10,0,0'>
-        <Border Height='1' Background='#2C3745' Margin='0,0,0,16'/>
+        <Border Height='1' Background='#2C3745' Margin='0,0,0,8'/>
+        <Grid Margin='0,0,0,12'><Grid.ColumnDefinitions><ColumnDefinition Width='42'/><ColumnDefinition/></Grid.ColumnDefinitions><TextBlock Text='弹道' FontSize='11' Foreground='#96A5B6' VerticalAlignment='Center'/><ComboBox x:Name='ArcSelector' Grid.Column='1' SelectedIndex='0' Padding='7,5'><ComboBoxItem Content='自动（武器默认）'/><ComboBoxItem Content='高抛'/><ComboBoxItem Content='低抛'/></ComboBox></Grid>
         <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
           <StackPanel><TextBlock Text='方位角' FontSize='11' Foreground='#96A5B6'/><TextBlock x:Name='Bearing' Text='—' FontSize='30' FontWeight='Medium' Margin='0,7,0,0'/></StackPanel>
           <StackPanel Grid.Column='1'><TextBlock x:Name='ElevationLabel' Text='高抛密位 / MIL' FontSize='11' Foreground='#96A5B6'/><TextBlock x:Name='Elevation' Text='—' Foreground='#ADCDF9' FontSize='33' FontWeight='Medium' Margin='0,4,0,0'/></StackPanel>
@@ -791,14 +861,14 @@ namespace SquadTools
         <DockPanel Margin='16,0' LastChildFill='False'><StackPanel DockPanel.Dock='Left' Orientation='Horizontal' VerticalAlignment='Center'><StackPanel Width='166' Margin='0,0,12,0'><TextBlock x:Name='MapName' Text='离线坐标网格' FontSize='13' FontWeight='Medium' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, ElementName=MapInfo}'/><TextBlock x:Name='MapInfo' Visibility='Collapsed'/></StackPanel><RadioButton x:Name='PlaceTarget' Content='目标' IsChecked='True' GroupName='Mode'/><RadioButton x:Name='PlaceMortar' Content='炮位' GroupName='Mode'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ZoomOut' Content='−' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ZoomIn' Content='+' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ResetView' Content='全图' Padding='10,4'/></StackPanel></DockPanel>
         <Border Grid.Row='1' x:Name='MapHost' BorderBrush='#2A3441' BorderThickness='0,1'/>
         <Grid Grid.Row='2' Margin='16,7'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions>
-          <TextBlock x:Name='MapGestureHint' Text='左键目标 · 右键双击炮位' TextTrimming='CharacterEllipsis' ToolTip='按住右键或中键拖动；滚轮缩放。' Margin='0,0,10,0' Foreground='#8192A5' FontSize='10' VerticalAlignment='Center'/>
+          <DockPanel LastChildFill='True' Margin='0,0,10,0'><StackPanel x:Name='ShootingDisplay' Orientation='Horizontal' DockPanel.Dock='Right' VerticalAlignment='Center'><CheckBox x:Name='SpreadDisplay' Content='散布' IsChecked='True' Foreground='#94C9FF' FontSize='11' Margin='0,0,10,0' VerticalAlignment='Center'/><CheckBox x:Name='DamageDisplay' Content='伤害圈' IsChecked='True' Foreground='#EDC084' FontSize='11' Margin='0,0,9,0' VerticalAlignment='Center'/><Button x:Name='TrajectoryButton' Content='弹道剖面' Background='Transparent' Padding='6,5'/></StackPanel><TextBlock x:Name='MapGestureHint' Text='左键目标 · 右键双击炮位' TextTrimming='CharacterEllipsis' ToolTip='左键目标；右键双击炮位；按住右键或中键拖动；滚轮缩放。' Margin='0,0,8,0' Foreground='#8192A5' FontSize='10' VerticalAlignment='Center'/></DockPanel>
           <StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ClearMap' Content='空白地图' Background='Transparent' Padding='9,5' Margin='0,0,4,0'/><Button x:Name='ImportMap' Content='导入地图' Padding='10,5'/></StackPanel>
         </Grid>
       </Grid>
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-  <TextBlock Grid.Row='3' Text='Squad Tools · 0.6.2 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
+   <TextBlock Grid.Row='3' Text='Squad Tools · 0.7.0 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 

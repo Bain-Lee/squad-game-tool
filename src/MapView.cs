@@ -21,11 +21,26 @@ namespace SquadTools
         public double RangeMeters = Ballistics.Velocity * Ballistics.Velocity / Ballistics.Gravity;
         public event Action<Vec2, bool> PointPlaced;
         public event Action<RaasPoint> PredictionPointClicked;
+        public event Action<RaasPoint> PredictionPointHovered;
+        private RaasPoint hoveredPrediction;
+        private ShotFootprint footprint;
+        private bool showSpread, showDamage;
+        private double shotBearing;
+        public ShotFootprint Footprint { get { return footprint; } }
+        public void SetShotOverlay(ShotFootprint value, bool spread, bool damage, double bearing)
+        { footprint=value; showSpread=spread; showDamage=damage; shotBearing=bearing; predictionRevision++; InvalidateVisual(); }
         private IList<RaasMarker> predictionMarkers = new List<RaasMarker>();
         private bool predictionMode;
         private int predictionRevision, drawnPredictionRevision;
-        public bool PredictionMode { get { return predictionMode; } set { if(predictionMode==value) return; predictionMode=value; predictionRevision++; InvalidateVisual(); } }
-        public void SetPredictionMarkers(IList<RaasMarker> markers) { predictionMarkers=markers??new List<RaasMarker>(); ToolTip=null; predictionRevision++; InvalidateVisual(); }
+        public bool PredictionMode { get { return predictionMode; } set { if(predictionMode==value) return; predictionMode=value; SetHoveredPrediction(null); predictionRevision++; InvalidateVisual(); } }
+        public void SetPredictionMarkers(IList<RaasMarker> markers)
+        {
+            predictionMarkers=markers??new List<RaasMarker>();
+            // A normal board refresh may cancel a preview while the pointer stays
+            // over the same flag. Let the next move start that preview again.
+            if(hoveredPrediction!=null && !predictionMarkers.Any(m=>m.Point==hoveredPrediction && m.IsPreview)) hoveredPrediction=null;
+            ToolTip=null; predictionRevision++; InvalidateVisual();
+        }
         private double zoom = 1;
         private Vector pan;
         private Point dragStart;
@@ -72,6 +87,7 @@ namespace SquadTools
             MouseDown += OnDown;
             MouseMove += OnMove;
             MouseUp += OnUp;
+            MouseLeave += delegate { SetHoveredPrediction(null); };
             LostMouseCapture += delegate { EndDrag(); };
             Unloaded += delegate { EndDrag(); };
             SizeChanged += delegate { InvalidateVisual(); };
@@ -127,6 +143,7 @@ namespace SquadTools
                 weaponDoubleClick = button == MouseButton.Right && clickCount > 1 && rightClickPending;
                 rightClickPending = false;
                 dragging = true; dragMoved = false; dragButton = button;
+                SetHoveredPrediction(null);
                 dragStart = position; panStart = pan;
                 CaptureMouse(); Cursor = Cursors.SizeAll;
                 return true;
@@ -143,7 +160,7 @@ namespace SquadTools
                 Point p=Screen(marker.Point.Position); double distance=(p-position).LengthSquared;
                 if(PredictionHit(marker,position) && distance<=best) { closest=marker; best=distance; }
             }
-            if(closest!=null && PredictionPointClicked!=null) PredictionPointClicked(closest.Point);
+            if(closest!=null && PredictionPointClicked!=null) { SetHoveredPrediction(null); PredictionPointClicked(closest.Point); }
         }
         private bool PredictionHit(RaasMarker marker,Point position)
         {
@@ -166,7 +183,14 @@ namespace SquadTools
                 Point cursor=e.GetPosition(this);
                 var marker=predictionMarkers.Where(m=>PredictionHit(m,cursor)).OrderBy(m=>(Screen(m.Point.Position)-cursor).LengthSquared).FirstOrDefault();
                 ToolTip=marker!=null?marker.Caption+"\n顺位 "+marker.Label:null;
-            } else ToolTip=null;
+                SetHoveredPrediction(marker!=null && marker.Clickable && !marker.Point.IsMain && (marker.ConfirmedStep==0 || marker.IsPreview)?marker.Point:null);
+            } else { ToolTip=null; SetHoveredPrediction(null); }
+        }
+        private void SetHoveredPrediction(RaasPoint point)
+        {
+            if(hoveredPrediction==point) return;
+            hoveredPrediction=point;
+            if(PredictionPointHovered!=null) PredictionPointHovered(point);
         }
 
         private void BeginPan()
@@ -348,6 +372,7 @@ namespace SquadTools
                     dc.DrawEllipse(null, Line("#E619251B", 4.5), a, radius, radius);
                     dc.DrawEllipse(null, Line("#D4F58C", 2), a, radius, radius);
                     dc.DrawLine(Line("#E2D57C", 2, true, false), a, b);
+                    DrawShotOverlay(dc,b,scale);
                     Marker(dc, a, "M", "#B8EB7E"); Marker(dc, b, "T", "#FFA88C");
                     double distance = Math.Sqrt(Math.Pow(Target.X - Weapon.X, 2) + Math.Pow(Target.Y - Weapon.Y, 2));
                     Point mid = new Point((a.X + b.X) / 2, (a.Y + b.Y) / 2);
@@ -377,7 +402,7 @@ namespace SquadTools
             var confirmed=predictionMarkers.Where(m=>m.ConfirmedStep>0).OrderBy(m=>m.ConfirmedStep).ToList();
             var main=predictionMarkers.FirstOrDefault(m=>m.SelectedMain);
             var path=confirmed.Select(m=>m.Point).ToList(); if(main!=null) path.Insert(0,main.Point);
-            for(int i=1;i<path.Count;i++) dc.DrawLine(Line("#EEF5FF",2),Local(path[i-1].Position,scale),Local(path[i].Position,scale));
+            for(int i=1;i<path.Count;i++) dc.DrawLine(Line("#EEF5FF",2,confirmed.Any(m=>m.Point==path[i] && (m.IsPreview || m.Automatic)),false),Local(path[i-1].Position,scale),Local(path[i].Position,scale));
             var ordered=predictionMarkers.OrderBy(m=>m.Clickable?1:0).ToList();
             var occupied=ordered.Select(m=> { var p=Local(m.Point.Position,scale); return new Rect(p.X-22,p.Y-18,44,36); }).ToList();
             foreach(var marker in ordered) {
@@ -389,7 +414,7 @@ namespace SquadTools
                     continue;
                 }
                 double radius=marker.Point.IsMain?16:14;
-                dc.DrawEllipse(Brush("#EC101B24"),Line(color,2.5),p,radius,radius);
+                dc.DrawEllipse(Brush("#EC101B24"),Line(color,2.5,marker.IsPreview || marker.Automatic,false),p,radius,radius);
                 Text(dc,marker.Label,p.X-(marker.Label.Length>1?10:4),p.Y-8,12,color);
             }
             foreach(var marker in ordered.OrderByDescending(m=>m.Clickable)) {
@@ -426,11 +451,30 @@ namespace SquadTools
                 Text(dc, (scaleLength / scale).ToString("F0") + " m", 29, ActualHeight - 44, 10, "#BECDD5");
                 if (HasMarkers && !PredictionMode)
                 {
-                    dc.DrawRoundedRectangle(Brush("#D9101B24"), null, new Rect(ActualWidth - 181, ActualHeight - 41, 166, 26), 4, 4);
+                    double legendHeight=footprint!=null && (showSpread || showDamage)?66:26;
+                    dc.DrawRoundedRectangle(Brush("#E9101B24"), null, new Rect(ActualWidth - 202, ActualHeight - 15-legendHeight, 187, legendHeight), 4, 4);
                     dc.DrawLine(Line("#D4F58C", 2), new Point(ActualWidth - 171, ActualHeight - 28), new Point(ActualWidth - 155, ActualHeight - 28));
                     Text(dc, "绿色圈：平地理论射程", ActualWidth - 149, ActualHeight - 36, 10, "#D9E8CF");
+                    if(footprint!=null && (showSpread || showDamage)) {
+                        Text(dc,showSpread?"蓝色：理论散布椭圆":"散布已隐藏",ActualWidth-190,ActualHeight-73,10,"#94C9FF");
+                        Text(dc,showDamage?"虚线：100 / 25 伤害范围":"伤害范围已隐藏",ActualWidth-190,ActualHeight-55,10,"#E9AF89");
+                    }
                 }
                 if (MapImage == null) Text(dc, "坐标网格 · 可导入本地地图图片", Math.Max(18, ActualWidth - 258), ActualHeight - (HasMarkers ? 63 : 37), 12, "#8196A5");
+            }
+        }
+
+        private void DrawShotOverlay(DrawingContext dc,Point target,double scale)
+        {
+            if(footprint==null) return;
+            if(showDamage) {
+                if(footprint.Damage25Radius>0) dc.DrawEllipse(null,Line("#EDC084",1.5,true,false),target,footprint.Damage25Radius*scale,footprint.Damage25Radius*scale);
+                if(footprint.Damage100Radius>0) dc.DrawEllipse(null,Line("#FF997F",2,true,false),target,footprint.Damage100Radius*scale,footprint.Damage100Radius*scale);
+            }
+            if(showSpread && footprint.AlongRadius>0 && footprint.AcrossRadius>0) {
+                dc.PushTransform(new RotateTransform(shotBearing-90,target.X,target.Y));
+                dc.DrawEllipse(Brush("#2894C9FF"),Line("#94C9FF",1.7),target,footprint.AlongRadius*scale,footprint.AcrossRadius*scale);
+                dc.Pop();
             }
         }
 

@@ -123,6 +123,12 @@ namespace SquadTools
         public bool SelectedHigh { get { return HighUsable && (PreferHigh || !LowUsable); } }
         public string Message { get; private set; }
 
+        public bool TrySelectArc(ArcPreference preference, out bool high)
+        {
+            high = preference == ArcPreference.Automatic ? SelectedHigh : preference == ArcPreference.High;
+            return high ? HighUsable : LowUsable;
+        }
+
         internal FiringSolution(double distance, double bearing, double heightDifference,
             double highMil, double lowMil, double highTime, double lowTime,
             bool highUsable, bool lowUsable, string message)
