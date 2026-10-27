@@ -85,6 +85,10 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0) { throw 'Feature test compilation failed.' }
     & (Join-Path $taskBuild 'FeatureTests.exe') (Join-Path $taskOutput 'maps') (Join-Path $taskOutput 'layers') $taskBuild
     if ($LASTEXITCODE -ne 0) { throw 'Feature regression tests failed.' }
+    & $taskCompiler /nologo /warn:4 /langversion:5 /target:exe /platform:x64 /main:ReviewTests /codepage:65001 ('/out:' + (Join-Path $taskBuild 'ReviewTests.exe')) $taskRefs $taskSources (Join-Path $taskRoot 'tests\ReviewTests.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Code review test compilation failed.' }
+    & (Join-Path $taskBuild 'ReviewTests.exe') (Join-Path $taskOutput 'maps') (Join-Path $taskOutput 'layers')
+    if ($LASTEXITCODE -ne 0) { throw 'Code review regression tests failed.' }
 }
 if ($Benchmark) {
     $taskBuild = Join-Path $taskRoot 'build'

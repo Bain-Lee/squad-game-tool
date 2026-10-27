@@ -57,7 +57,7 @@
 - 底图：`/img/maps/<资源标识>/basemap.webp`。
 - 高程：`/img/maps/<资源标识>/heightmap.png`。
 - 其他底图样式和高清切片的路径由 [SquadCalc `squadMinimap.js`](https://github.com/sh4rkman/SquadCalc/blob/24828d6d3081c7ce52b10ef39ec86036ebf010b5/src/js/squadMinimap.js)定义。
-- 高程像素编码与缩放由 [SquadCalc `squadHeightmaps.js`](https://github.com/sh4rkman/SquadCalc/blob/24828d6d3081c7ce52b10ef39ec86036ebf010b5/src/js/squadHeightmaps.js)定义：`(255 + R - B) * landscapeScale[2]`。计算两点相对高差时常量偏移会抵消；导入高程并不等于已完成游戏内命中验证。
+- 高程像素编码与缩放由 [SquadCalc `squadHeightmaps.js`](https://github.com/sh4rkman/SquadCalc/blob/24828d6d3081c7ce52b10ef39ec86036ebf010b5/src/js/squadHeightmaps.js)定义：`(255 + R - B) * landscapeScale[2]`。本地再加 `SDK_data.zOffset` 恢复 SDK 世界 Z 基准；该零点并非海平面，负高程合法。计算两点相对高差时常量偏移会抵消；导入高程并不等于已完成游戏内命中验证。
 
 WPF 原生不支持 WebP，打包时将底图转换为 PNG 或 JPEG；只要不改变尺寸比例、旋转或裁切，坐标映射保持一致。转换工具仅使用本机已有运行环境；本次任务不授权安装工具或依赖。
 

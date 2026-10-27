@@ -38,8 +38,8 @@ namespace SquadTools
             heading.Text=title; Chart.SetProfile(profile,selectedHigh);
             if(profile==null) { highSummary.Text=lowSummary.Text=""; note.Text=error??"没有可显示的有效弹道。"; return; }
             highSummary.Text=Summary(profile,true,selectedHigh); lowSummary.Text=Summary(profile,false,selectedHigh);
-            note.Text=(profile.HasTerrain?"地表高程来自本地高度图，不含建筑、房顶或桥面。":"本图无地形数据：沿程地形未知，仅显示炮位、目标高程与理论弹道。")+
-                "\n横轴为距炮位的水平距离，纵轴为绝对高程，均为米；两轴比例独立。曲线不进行自动遮挡判定。"+
+            note.Text=(profile.HasTerrain?"地表采用地图 SDK 基准高程，可为负数，并非海拔；不含建筑、房顶或桥面。":"本图无地形数据：沿程地形未知，仅显示炮位、目标高程与理论弹道。")+
+                "\n横轴为距炮位的水平距离，纵轴为同一基准下的高程，均为米；两轴比例独立。曲线不进行自动遮挡判定。"+
                 (profile.Weapon.Deceleration>0?" UB-32 沿用距离相关速度近似。":"");
         }
         private static string Summary(TrajectoryProfile profile,bool high,bool? selected)
@@ -83,7 +83,7 @@ namespace SquadTools
                 dc.DrawLine(Line("#263746",1,false),new Point(x,plot.Top),new Point(x,plot.Bottom));
                 Text(dc,distance.ToString("F0",CultureInfo.InvariantCulture),x-12,plot.Bottom+8,"#94A7BB",10);
             }
-            Text(dc,"高程 / m",8,5,"#A7B8C8",10); Text(dc,"距炮位 / m",Math.Max(64,plot.Right-65),plot.Bottom+25,"#A7B8C8",10);
+            Text(dc,"基准高程 / m",8,5,"#A7B8C8",10); Text(dc,"距炮位 / m",Math.Max(64,plot.Right-65),plot.Bottom+25,"#A7B8C8",10);
             if(Profile.HasTerrain) {
                 var ground=new StreamGeometry();
                 using(var context=ground.Open()) {

@@ -10,7 +10,7 @@
 
 资源来自 [SquadCalc](https://github.com/sh4rkman/SquadCalc)，元数据固定为提交 [`24828d6d3081c7ce52b10ef39ec86036ebf010b5`](https://github.com/sh4rkman/SquadCalc/tree/24828d6d3081c7ce52b10ef39ec86036ebf010b5)，图片取自 `https://squadcalc.app/api/img/maps/`，下载日期为 2026-10-22。图片服务内容可能更新；本次文件校验值记录在 `SHA256SUMS.txt` 中。游戏地图素材权利归其权利人所有；使用与分发前请同时查看项目第三方许可说明。
 
-高度换算：`(255 + R - B) × heightScale + heightOffset`。高差计算中固定的 `heightOffset` 相互抵消。地图宽高由 Squad SDK 小地图的两个角点相减得出，少数地图不是正方形。
+高度换算：`(255 + R - B) × heightScale + heightOffset`。其中 `heightOffset` 对应上游 `SDK_data.zOffset`，将高度图恢复到 SDK 世界 Z 坐标基准；该基准不是海平面，因此地表可以为负数。高差计算中固定的 `heightOffset` 相互抵消，不应对高度取绝对值或截断为 0。上游二维界面只用未加偏移的高度计算高差，而 [三维标定说明](https://github.com/sh4rkman/SquadCalc/blob/24828d6d3081c7ce52b10ef39ec86036ebf010b5/src/js/squad3DSimulation.js#L1840)说明了恢复 SDK 世界 Z 的含义。地图宽高由 Squad SDK 小地图的两个角点相减得出，少数地图不是正方形。
 
 Belaya 的上游记录保留了旧版底图与尺寸，但没有可靠的当前 R/B 高度换算比例，因此其 `heightmap` 为空、`heightScale` 为 0，只使用手动高差。它不计入当前 25 张官方地图。
 

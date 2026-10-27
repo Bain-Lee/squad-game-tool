@@ -20,6 +20,7 @@ namespace SquadTools
         public string ImagePath { get; private set; }
         public string HeightmapPath { get; private set; }
         public double HeightScale { get; private set; }
+        /// <summary>Metres added to decoded heights to recover SDK world Z, not sea-level altitude.</summary>
         public double HeightOffset { get; private set; }
         public string SourceCommit { get; private set; }
         public bool HasTerrainHeight { get { return !String.IsNullOrEmpty(HeightmapPath); } }
@@ -161,7 +162,7 @@ namespace SquadTools
         }
     }
 
-    /// <summary>Raw PNG red/blue terrain encoding, without colour correction.</summary>
+    /// <summary>Raw PNG red/blue terrain encoding in the SDK world-Z datum; negative values are valid.</summary>
     public sealed class TerrainHeightMap
     {
         private readonly MapDefinition map;
@@ -217,6 +218,8 @@ namespace SquadTools
             int row = Math.Min(pixelHeight - 1, (int)Math.Floor(position.Y / map.Height * pixelHeight + 0.5));
             int index = row * stride + column * 4;
             double raw = 255 + pixels[index + 2] - pixels[index];
+            // This common SDK datum can place an entire map below zero. Never
+            // apply abs/clamping: only the signed difference affects ballistics.
             double height = raw * map.HeightScale + map.HeightOffset;
             if (Double.IsNaN(height) || Double.IsInfinity(height))
                 throw new InvalidDataException("地图高程换算超出数值范围：" + map.DisplayName);

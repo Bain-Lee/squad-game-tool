@@ -337,6 +337,7 @@ namespace SquadTools
                     map.WorldSize = selectedMap.Width; map.WorldHeight = selectedMap.Height;
                     mapName.Text = selectedMap.Name;
                     mapInfo.Text = string.Format(CultureInfo.InvariantCulture, "{0:0.##} × {1:0.##} m · 已标定", selectedMap.Width, selectedMap.Height);
+                    if(selectedMap.HasTerrainHeight) mapInfo.Text+=string.Format(CultureInfo.InvariantCulture,"\n高程采用 SDK 世界 Z 基准，偏移 {0:0.####} m；可为负数，并非海拔。",selectedMap.HeightOffset);
                     try { map.MapImage = ReadImage(selectedMap.ImagePath); }
                     catch (Exception ex) { mapError = "地图图片无法读取：" + ex.Message; }
                     if (File.Exists(selectedMap.HeightmapPath))
@@ -367,8 +368,8 @@ namespace SquadTools
         {
             bool automatic = terrain != null;
             weaponHeight.IsReadOnly = automatic; targetHeight.IsReadOnly = automatic;
-            heightHint.Text = (automatic ? "自动地形高程" : "本图无高程数据 · 手动填写") + " · 炮口高 " + selectedWeapon.MuzzleHeight.ToString("0.###", CultureInfo.InvariantCulture) + "m";
-            terrainNote.Text = automatic ? "自动读取地表高程，不含房顶、桥梁等建筑附加高度。" : "本图无高程数据，请手动填写炮位和目标的地面高度。";
+            heightHint.Text = (automatic ? "自动 · SDK 基准可为负" : "本图无高程数据 · 手动填写") + " · 炮口高 " + selectedWeapon.MuzzleHeight.ToString("0.###", CultureInfo.InvariantCulture) + "m";
+            terrainNote.Text = automatic ? "自动读取地表的 SDK 世界 Z 高程，并非海拔；地图零点位于地面上方时可为负。两点高差参与解算，不含房顶、桥梁等建筑附加高度。" : "本图无高程数据，请按同一高度基准手动填写炮位和目标的地面高度。";
         }
 
         private static double Number(string text, string label)
@@ -868,7 +869,7 @@ namespace SquadTools
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-   <TextBlock Grid.Row='3' Text='Squad Tools · 0.7.0 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
+   <TextBlock Grid.Row='3' Text='Squad Tools · 0.7.1 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 
