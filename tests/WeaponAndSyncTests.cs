@@ -160,11 +160,14 @@ internal static class WeaponAndSyncTests
         string folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"weapon-settings-"+Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
         try {
-            File.WriteAllText(Path.Combine(folder,"settings.xml"),"<settings><mapId>gorodok</mapId><weapon>D05-5-5</weapon><target>F06-5-5</target></settings>");
+            File.WriteAllText(Path.Combine(folder,"settings.xml"),"<settings><mapId>gorodok</mapId><weapon>D05-5-5</weapon><target>F06-5-5</target><automaticHeight>false</automaticHeight><weaponHeight>9999</weaponHeight><targetHeight>9999</targetHeight></settings>");
             var original = new MainWindow(false,maps,folder);
             try {
                 Check(Field<WeaponDefinition>(original,"selectedWeapon").Id == "mortar", "legacy settings without weapon id keep standard mortar");
+                Check(Field<TextBox>(original,"weaponHeight").IsReadOnly && Field<TextBox>(original,"targetHeight").IsReadOnly,"legacy automaticHeight=false cannot disable the new always-automatic terrain mode");
+                Check(Field<TextBox>(original,"weaponHeight").Text!="9999" && Field<TextBox>(original,"targetHeight").Text!="9999","automatic terrain replaces legacy manually saved elevations");
                 Call(original,"SelectWeapon","m1064","nearSurface"); Call(original,"SaveSettings");
+                Check(!File.ReadAllText(Path.Combine(folder,"settings.xml")).Contains("automaticHeight"),"removed height switch is no longer persisted");
             } finally { original.Close(); }
             var restored = new MainWindow(false,maps,folder);
             try {

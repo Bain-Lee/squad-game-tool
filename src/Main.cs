@@ -26,11 +26,9 @@ namespace SquadTools
         private WeaponDefinition selectedWeapon = WeaponCatalog.Default;
         private ShellDefinition selectedShell = WeaponCatalog.Default.Shells[0];
         private string restoredWeaponId = "mortar", restoredShellId = "default", followedServerId;
-        private CheckBox automaticHeight;
         private MapDefinition selectedMap;
         private TerrainHeightMap terrain;
         private readonly List<MapChoice> mapChoices = new List<MapChoice>();
-        private bool preferAutomaticHeight = true;
         private double customMapSize = 3000;
         private string restoredMapId = "yehorivka";
         private string mapError;
@@ -78,7 +76,7 @@ namespace SquadTools
             distance = (TextBlock)root.FindName("Distance"); difference = (TextBlock)root.FindName("Difference"); flight = (TextBlock)root.FindName("Flight");
             status = (TextBlock)root.FindName("Status"); mapName = (TextBlock)root.FindName("MapName");
             mapInfo = (TextBlock)root.FindName("MapInfo"); terrainNote = (TextBlock)root.FindName("TerrainNote"); heightHint = (TextBlock)root.FindName("HeightHint");
-            mapSelector = (ComboBox)root.FindName("MapSelector"); automaticHeight = (CheckBox)root.FindName("AutomaticHeight");
+            mapSelector = (ComboBox)root.FindName("MapSelector");
             weaponCategory = (ComboBox)root.FindName("WeaponCategory"); weaponSelector = (ComboBox)root.FindName("WeaponSelector"); shellSelector = (ComboBox)root.FindName("ShellSelector");
             weaponInfo = (TextBlock)root.FindName("WeaponInfo"); serverMapNote = (TextBlock)root.FindName("ServerMapNote"); stopServerFollow = (Button)root.FindName("StopServerFollow");
             weaponCategory.ItemsSource = new[] { "工事", "载具" };
@@ -103,8 +101,6 @@ namespace SquadTools
             ((RadioButton)root.FindName("PlaceMortar")).Checked += delegate { map.PlaceWeapon = true; };
             ((RadioButton)root.FindName("PlaceTarget")).Checked += delegate { map.PlaceWeapon = false; };
             mapSelector.SelectionChanged += delegate { if (!loading) { if(!raasMode || CanFollowRaas()) StopServerFollow(); currentLayerRawName=null; ApplySelectedMap(true); if(raasMode) UpdateRaasMap(); } };
-            automaticHeight.Checked += delegate { if (!loading) { preferAutomaticHeight = true; UpdateHeightMode(); Recalculate(); } };
-            automaticHeight.Unchecked += delegate { if (!loading) { preferAutomaticHeight = false; UpdateHeightMode(); Recalculate(); } };
             weaponGrid.TextChanged += delegate { if (!loading) { preciseWeapon = null; Recalculate(); } };
             targetGrid.TextChanged += delegate { if (!loading) { preciseTarget = null; Recalculate(); } };
             foreach (var box in new[] { weaponHeight, targetHeight }) box.TextChanged += delegate { if (!loading) Recalculate(); };
@@ -141,7 +137,6 @@ namespace SquadTools
             ((Button)root.FindName("RaasTab")).Background = new SolidColorBrush(!selected && raasMode ? Color.FromRgb(48,74,100) : Colors.Transparent);
             ((UIElement)root.FindName("FireControls")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             ((UIElement)root.FindName("RaasHost")).Visibility=raasMode?Visibility.Visible:Visibility.Collapsed;
-            ((Border)root.FindName("Sidebar")).VerticalAlignment=raasMode?VerticalAlignment.Stretch:VerticalAlignment.Top;
             ((TextBlock)root.FindName("PageTitle")).Text=raasMode?"RAAS 猜点":"射击计算";
             ((TextBlock)root.FindName("PageDescription")).Text=raasMode?"确认已知旗点，查看下一点。":"点选地图，或输入坐标。";
             ((RadioButton)root.FindName("PlaceTarget")).Visibility=((RadioButton)root.FindName("PlaceMortar")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
@@ -336,8 +331,6 @@ namespace SquadTools
                         catch (Exception) { terrain = null; }
                     }
                 }
-                automaticHeight.IsEnabled = terrain != null;
-                automaticHeight.IsChecked = terrain != null && preferAutomaticHeight;
                 double mapWidth = map.WorldSize, mapHeight = map.WorldHeight;
                 if (preciseWeapon.HasValue && !InsideMap(preciseWeapon.Value, mapWidth, mapHeight)) preciseWeapon = null;
                 if (preciseTarget.HasValue && !InsideMap(preciseTarget.Value, mapWidth, mapHeight)) preciseTarget = null;
@@ -351,18 +344,17 @@ namespace SquadTools
                 }
                 UpdateHeightMode(); map.ResetView();
             }
-            catch (Exception ex) { mapError = "地图加载失败：" + ex.Message; terrain = null; automaticHeight.IsEnabled = false; automaticHeight.IsChecked = false; UpdateHeightMode(); }
+            catch (Exception ex) { mapError = "地图加载失败：" + ex.Message; terrain = null; UpdateHeightMode(); }
             finally { loading = wasLoading; }
             if (!loading) Recalculate();
         }
 
         private void UpdateHeightMode()
         {
-            bool automatic = terrain != null && automaticHeight.IsChecked == true;
+            bool automatic = terrain != null;
             weaponHeight.IsReadOnly = automatic; targetHeight.IsReadOnly = automatic;
-            weaponHeight.Opacity = automatic ? 0.75 : 1; targetHeight.Opacity = automatic ? 0.75 : 1;
-            heightHint.Text = (automatic ? "自动读取地形高度" : "高差需手动填写") + "，另计炮口高 " + selectedWeapon.MuzzleHeight.ToString("0.###", CultureInfo.InvariantCulture) + "m。";
-            terrainNote.Text = automatic ? "自动地形高程 · 不含建筑附加高度" : (terrain == null ? "本图无高程数据 · 手动输入高度" : "手动地面高差 · 可开启自动高程");
+            heightHint.Text = (automatic ? "自动地形高程" : "本图无高程数据 · 手动填写") + " · 炮口高 " + selectedWeapon.MuzzleHeight.ToString("0.###", CultureInfo.InvariantCulture) + "m";
+            terrainNote.Text = automatic ? "自动读取地表高程，不含房顶、桥梁等建筑附加高度。" : "本图无高程数据，请手动填写炮位和目标的地面高度。";
         }
 
         private static double Number(string text, string label)
@@ -391,7 +383,7 @@ namespace SquadTools
                 if (preciseTarget.HasValue) target = preciseTarget.Value;
                 if (mortar.X >= width || mortar.Y >= map.WorldHeight || target.X >= width || target.Y >= map.WorldHeight)
                     throw new FormatException("坐标超出当前地图，请检查坐标或地图边长。");
-                bool automatic = terrain != null && automaticHeight.IsChecked == true;
+                bool automatic = terrain != null;
                 if (automatic)
                 {
                     bool wasLoading = loading; loading = true;
@@ -428,6 +420,10 @@ namespace SquadTools
                 bearing.Text = "—"; elevation.Text = "—"; distance.Text = "—"; difference.Text = "—"; flight.Text = "—";
                 status.Text = ex.Message; status.Foreground = new SolidColorBrush(Color.FromRgb(255, 168, 140));
                 map.HasMarkers = false;
+                if(terrain!=null) {
+                    bool wasLoading=loading; loading=true;
+                    try { weaponHeight.Text=""; targetHeight.Text=""; } finally { loading=wasLoading; }
+                }
                 weaponGrid.ToolTip = "请输入有效网格坐标；在地图点击可精确定位。";
                 targetGrid.ToolTip = "请输入有效网格坐标；在地图点击可精确定位。";
             }
@@ -526,8 +522,6 @@ namespace SquadTools
                     XmlNode mapNode = document.SelectSingleNode("/settings/mapId");
                     if (mapNode != null) restoredMapId = mapNode.InnerText;
                     else if (File.Exists(ImagePath)) restoredMapId = "custom";
-                    XmlNode autoNode = document.SelectSingleNode("/settings/automaticHeight");
-                    preferAutomaticHeight = autoNode == null || autoNode.InnerText != "false";
                     XmlNode weaponNode = document.SelectSingleNode("/settings/weaponId"), shellNode = document.SelectSingleNode("/settings/shellId");
                     if (weaponNode != null) restoredWeaponId = weaponNode.InnerText;
                     if (shellNode != null) restoredShellId = shellNode.InnerText;
@@ -547,8 +541,8 @@ namespace SquadTools
                 using (var writer = XmlWriter.Create(Path.Combine(dataDirectory, "settings.xml"), settings))
                 {
                     writer.WriteStartElement("settings");
-                    string[] names = { "weapon", "target", "weaponHeight", "targetHeight", "mapSize", "mapId", "automaticHeight" };
-                    string[] values = { weaponGrid.Text, targetGrid.Text, weaponHeight.Text, targetHeight.Text, customMapSize.ToString("0.##", CultureInfo.InvariantCulture), ((MapChoice)mapSelector.SelectedItem).Id, preferAutomaticHeight ? "true" : "false" };
+                    string[] names = { "weapon", "target", "weaponHeight", "targetHeight", "mapSize", "mapId" };
+                    string[] values = { weaponGrid.Text, targetGrid.Text, weaponHeight.Text, targetHeight.Text, customMapSize.ToString("0.##", CultureInfo.InvariantCulture), ((MapChoice)mapSelector.SelectedItem).Id };
                     for (int i = 0; i < names.Length; i++) writer.WriteElementString(names[i], values[i]);
                     writer.WriteElementString("weaponId", selectedWeapon.Id); writer.WriteElementString("shellId", selectedShell.Id);
                     WritePrecisePoint(writer, "weapon", preciseWeapon);
@@ -587,7 +581,7 @@ namespace SquadTools
                 "1. 在左侧选择游戏地图。地图图片和尺寸已本地保存；切换后使用该地图的实际宽高。也可选择自定义图片 / 空白网格。\n\n" +
                 "2. 填写游戏网格坐标，如 D05-5-5。每个大格 300 米，九宫格顺序与数字小键盘一致。按最细小格中心计算。\n\n" +
                 "地图左键放目标，双击右键放炮位；按住右键移动鼠标可拖动地图，滚轮缩放，也支持中键拖动。右键单击不放置标记，双击的第二次松开时设置炮位；拖动不会设置炮位。地图点击保留实际位置，不吸附到网格中心；框内网格仅作参考，悬停可查看实际米制坐标。\n\n" +
-                "3. 默认自动读取本地地形高程，可关闭后手动输入高度。地形数据不含桥梁、房顶等附加高度；目标更高时高差为正。炮口高度按所选武器计算。\n\n" +
+                "3. 炮位和目标高程始终显示；有本地高程数据时自动读取并随坐标更新，无需开关。自定义图片、旧版 Belaya 等无高程数据的地图可手动填写。地形数据不含桥梁、房顶等附加高度；目标更高时高差为正。炮口高度按所选武器计算。\n\n" +
                 "4. 左上角选择工事或载具、具体武器及弹药。程序使用各自初速、重力和仰角限制，按武器显示密位、度数或度分。方位 0° 为北、90° 为东；NATO 密位采用 6400/圈。飞行时间为理论估算。\n\n" +
                 "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
                 "贝拉亚为暂退役的旧版地图，仅提供底图和手动高差。本版不判断地形遮挡，不含 OCR 或游戏读取，命中精度尚未经游戏实测。\n\n" +
@@ -605,11 +599,12 @@ namespace SquadTools
                 if (choice.Definition == null) continue;
                 mapSelector.SelectedItem = choice;
                 if (mapError != null || map.MapImage == null || map.WorldSize != choice.Definition.Width || map.WorldHeight != choice.Definition.Height) throw new InvalidOperationException("Map selection failed: " + choice.Id);
-                if (choice.Id != "belaya" && (terrain == null || automaticHeight.IsChecked != true)) throw new InvalidOperationException("Terrain missing: " + choice.Id);
-                if (choice.Id == "belaya" && (terrain != null || automaticHeight.IsEnabled)) throw new InvalidOperationException("Legacy map must use manual heights.");
+                if (choice.Id != "belaya" && (terrain == null || !weaponHeight.IsReadOnly || !targetHeight.IsReadOnly)) throw new InvalidOperationException("Terrain missing: " + choice.Id);
+                if (choice.Id == "belaya" && (terrain != null || weaponHeight.IsReadOnly || targetHeight.IsReadOnly)) throw new InvalidOperationException("Legacy map must use manual heights.");
                 bundledMaps++;
             }
             if (bundledMaps < 25) throw new InvalidOperationException("Incomplete map catalog.");
+            if (((FrameworkElement)Content).FindName("AutomaticHeight") != null) throw new InvalidOperationException("Automatic-height switch was not removed.");
             if (((FrameworkElement)Content).FindName("Copy") != null) throw new InvalidOperationException("Copy button was not removed.");
             if (((FrameworkElement)Content).FindName("MapSize") != null) throw new InvalidOperationException("Redundant map size field was not removed.");
             mapSelector.SelectedItem = mapChoices[mapChoices.Count - 1];
@@ -650,8 +645,8 @@ namespace SquadTools
             var exactWeapon = new Vec2(2667.12, 3048.34);
             var exactTarget = new Vec2(3267.89, 3348.56);
             PlacePoint(exactWeapon, true); PlacePoint(exactTarget, false);
-            automaticHeight.IsChecked = false; automaticHeight.IsChecked = true;
-            if (map.Weapon.X != exactWeapon.X || map.Target.Y != exactTarget.Y || Math.Abs(Number(weaponHeight.Text, "height") - terrain.Sample(exactWeapon)) > 0.005001) throw new InvalidOperationException("Height mode lost precise positions or sampled the grid centre.");
+            Recalculate();
+            if (map.Weapon.X != exactWeapon.X || map.Target.Y != exactTarget.Y || Math.Abs(Number(weaponHeight.Text, "height") - terrain.Sample(exactWeapon)) > 0.005001) throw new InvalidOperationException("Automatic height lost precise positions or sampled the grid centre.");
             UpdateLayout();
             var bitmap = new RenderTargetBitmap((int)ActualWidth, (int)ActualHeight, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(this);
@@ -753,9 +748,9 @@ namespace SquadTools
   <StackPanel x:Name='MortarHeading' Grid.Row='1'><TextBlock x:Name='PageTitle' Text='射击计算' FontSize='25' FontWeight='SemiBold'/><TextBlock x:Name='PageDescription' Text='点选地图，或输入坐标。' Foreground='#8F9EAF' Margin='0,6,0,0' FontSize='12'/></StackPanel>
   <Grid x:Name='MortarBody' Grid.Row='2'>
     <Grid.ColumnDefinitions><ColumnDefinition Width='318'/><ColumnDefinition Width='18'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
-    <Border x:Name='Sidebar' Background='#171F29' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13' Padding='18' VerticalAlignment='Top'>
+    <Border x:Name='Sidebar' Background='#171F29' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13' Padding='18'>
       <Grid><Border x:Name='RaasHost' Visibility='Collapsed'/>
-      <Grid x:Name='FireControls'><Grid.RowDefinitions><RowDefinition Height='*'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
+      <Grid x:Name='FireControls' VerticalAlignment='Top'><Grid.RowDefinitions><RowDefinition Height='*'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
       <ScrollViewer x:Name='InputScroll' VerticalScrollBarVisibility='Auto' HorizontalScrollBarVisibility='Disabled' Padding='0,0,8,0'>
         <StackPanel>
           <TextBlock Text='武器' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/>
@@ -768,12 +763,11 @@ namespace SquadTools
             <StackPanel><TextBlock Text='炮位' Foreground='#ADCDF9' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='WeaponGrid' Text='D05-5-5' ToolTip='在地图双击右键，或输入网格坐标。'/></StackPanel>
             <StackPanel Grid.Column='2'><TextBlock Text='目标' Foreground='#E4B6A4' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='TargetGrid' Text='F06-5-5' ToolTip='在地图左键点选，或输入网格坐标。'/></StackPanel>
           </Grid>
-          <CheckBox x:Name='AutomaticHeight' Content='自动高程' Margin='0,18,0,12' ToolTip='{Binding Text, ElementName=HeightHint}'/>
-          <Grid x:Name='HeightInputs' Margin='0,0,0,14'><Grid.Style><Style TargetType='Grid'><Setter Property='Visibility' Value='Collapsed'/><Style.Triggers><DataTrigger Binding='{Binding IsChecked, ElementName=AutomaticHeight}' Value='False'><Setter Property='Visibility' Value='Visible'/></DataTrigger></Style.Triggers></Style></Grid.Style><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition/></Grid.ColumnDefinitions>
+          <Grid x:Name='HeightInputs' Margin='0,16,0,0' ToolTip='{Binding Text, ElementName=TerrainNote}'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition/></Grid.ColumnDefinitions>
             <StackPanel><TextBlock Text='炮位高程 · m' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/><TextBox x:Name='WeaponHeight' Text='0'/></StackPanel>
             <StackPanel Grid.Column='2'><TextBlock Text='目标高程 · m' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/><TextBox x:Name='TargetHeight' Text='0'/></StackPanel>
           </Grid>
-          <TextBlock x:Name='HeightHint' Visibility='Collapsed'/>
+          <TextBlock x:Name='HeightHint' Foreground='#8196AD' FontSize='10' Margin='0,8,0,12' TextWrapping='Wrap'/>
         </StackPanel>
       </ScrollViewer>
       <StackPanel x:Name='ResultPanel' Grid.Row='1' Margin='0,10,0,0'>
@@ -792,7 +786,7 @@ namespace SquadTools
       </StackPanel>
       </Grid></Grid>
     </Border>
-    <Border Grid.Column='2' Background='#101B24' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13'>
+    <Border x:Name='MapCard' Grid.Column='2' Background='#101B24' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13'>
       <Grid><Grid.RowDefinitions><RowDefinition Height='52'/><RowDefinition Height='*'/><RowDefinition Height='48'/></Grid.RowDefinitions>
         <DockPanel Margin='16,0' LastChildFill='False'><StackPanel DockPanel.Dock='Left' Orientation='Horizontal' VerticalAlignment='Center'><StackPanel Width='166' Margin='0,0,12,0'><TextBlock x:Name='MapName' Text='离线坐标网格' FontSize='13' FontWeight='Medium' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, ElementName=MapInfo}'/><TextBlock x:Name='MapInfo' Visibility='Collapsed'/></StackPanel><RadioButton x:Name='PlaceTarget' Content='目标' IsChecked='True' GroupName='Mode'/><RadioButton x:Name='PlaceMortar' Content='炮位' GroupName='Mode'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ZoomOut' Content='−' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ZoomIn' Content='+' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ResetView' Content='全图' Padding='10,4'/></StackPanel></DockPanel>
         <Border Grid.Row='1' x:Name='MapHost' BorderBrush='#2A3441' BorderThickness='0,1'/>
@@ -804,7 +798,7 @@ namespace SquadTools
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-  <TextBlock Grid.Row='3' Text='Squad Tools · 0.6.1 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
+  <TextBlock Grid.Row='3' Text='Squad Tools · 0.6.2 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 
