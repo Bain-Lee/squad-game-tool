@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using SquadTools;
 
 internal static class MapRenderTests
@@ -133,8 +134,55 @@ internal static class MapRenderTests
             using (FileStream file = File.Create(args[1])) encoder.Save(file);
         }
         TestPointerGestures();
-        Console.WriteLine("Map render tests passed: " + assertions + " assertions; retained pan, right-button drag/double-click isolation, precise coordinates, rectangular clips, pinned labels, wheel anchor, resize, source/marker changes and capture/reset lifecycle.");
+        TestThemeRendering(image);
+        Console.WriteLine("Map render tests passed: " + assertions + " assertions; retained pan, right-button drag/double-click isolation, precise coordinates, rectangular clips, pinned labels, wheel anchor, resize, source/marker changes, live warm map themes and capture/reset lifecycle.");
         return 0;
+    }
+
+    private static Color Sample(MapView view,Point point)
+    {
+        view.UpdateLayout();
+        var bitmap=new RenderTargetBitmap((int)Math.Ceiling(view.ActualWidth),(int)Math.Ceiling(view.ActualHeight),96,96,PixelFormats.Pbgra32);
+        bitmap.Render(view); var pixel=new byte[4];
+        bitmap.CopyPixels(new Int32Rect((int)point.X,(int)point.Y,1,1),pixel,4,0);
+        return Color.FromArgb(pixel[3],pixel[2],pixel[1],pixel[0]);
+    }
+    private static void WarmSurface(Color color,string label)
+    {
+        Check(color.R>=color.G && color.G>color.B && color.R-color.B<=22 && color.B>=225,label+": actual="+color);
+    }
+    private static void Theme(MapView view,bool light)
+    {
+        UiTheme.Apply(light);
+        view.Dispatcher.Invoke(DispatcherPriority.ApplicationIdle,new Action(delegate{}));
+        Update(view); view.InvalidateVisual(); view.UpdateLayout();
+    }
+    private static void TestThemeRendering(BitmapSource image)
+    {
+        var view=new MapView();
+        try {
+            Theme(view,false); Layout(view,900,700);
+            Point surround=new Point(2,2); Vec2 bareGround=new Vec2(451,469);
+            Color darkSurround=Sample(view,surround), darkGround=Sample(view,(Point)Call(view,"Screen",bareGround));
+            Check(darkSurround.R<70 && darkSurround.G<70 && darkSurround.B<70,"dark map surround is dark before theme change");
+            int builds=view.SceneBuildCount;
+            Theme(view,true);
+            WarmSurface(Sample(view,surround),"live light theme updates the map surround");
+            WarmSurface(Sample(view,(Point)Call(view,"Screen",bareGround)),"live light theme updates an already-cached blank map");
+            Check(view.SceneBuildCount<=builds+1,"changing theme needs at most one scene refresh");
+            builds=view.SceneBuildCount;
+            for(int i=0;i<20;i++) { Set(view,"pan",new Vector(i*1.125,-i*0.75)); Update(view); }
+            Check(view.SceneBuildCount==builds,"light themed retained layers keep the existing pan cache");
+            WarmSurface(Sample(view,surround),"panning does not restore the old dark surround");
+            Theme(view,false);
+            Check(Sample(view,surround)==darkSurround,"switching back restores the original dark map surround");
+            Check(Sample(view,(Point)Call(view,"Screen",bareGround))==darkGround,"cached blank map returns to its original dark surface");
+            view.ResetView(); view.MapImage=image; Update(view);
+            Point texturePoint=(Point)Call(view,"Screen",bareGround); Color gameTexture=Sample(view,texturePoint);
+            Theme(view,true);
+            Check(Sample(view,texturePoint)==gameTexture,"theme changes preserve the original map image pixels");
+            WarmSurface(Sample(view,surround),"image maps also use a light viewport surround");
+        } finally { UiTheme.Apply(false); }
     }
 
     private static void TestPointerGestures()

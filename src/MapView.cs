@@ -288,10 +288,21 @@ namespace SquadTools
             dc.DrawText(text, new Point(x, y));
         }
 
+        private void ChromeText(DrawingContext dc, string value, double x, double y, double size, string color)
+        {
+            string key = "chrome:" + value + ":" + size.ToString(CultureInfo.InvariantCulture) + ":" + color;
+            FormattedText text;
+            if (!texts.TryGetValue(key, out text)) {
+                text = new FormattedText(value, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, font, size, UiTheme.Brush(color), drawnDpi);
+                texts.Add(key, text);
+            }
+            dc.DrawText(text, new Point(x, y));
+        }
+
         protected override void OnRender(DrawingContext dc)
         {
             base.OnRender(dc);
-            dc.DrawRectangle(Brush("#101B24"), null, new Rect(RenderSize));
+            dc.DrawRectangle(UiTheme.Brush("#101B24"), null, new Rect(RenderSize));
             UpdateViewport();
         }
 
@@ -335,7 +346,7 @@ namespace SquadTools
             RectangleGeometry clip = new RectangleGeometry(bounds); clip.Freeze(); scene.Clip = clip; overlay.Clip = clip;
             using (DrawingContext dc = scene.RenderOpen())
             {
-                dc.DrawRectangle(Brush("#182630"), Line("#3C5262", 1), bounds);
+                dc.DrawRectangle(UiTheme.Brush("#182630"), Line("#3C5262", 1), bounds);
                 if (MapImage != null) dc.DrawImage(MapImage, bounds);
                 if (HasMarkers && !PredictionMode)
                 {
@@ -440,27 +451,28 @@ namespace SquadTools
             HudBuildCount++;
             using (DrawingContext dc = hud.RenderOpen())
             {
-                Text(dc, "N", ActualWidth - 35, 17, 15, "#C4D0D6");
-                dc.DrawLine(Line("#C4D0D6", 2), new Point(ActualWidth - 29, 41), new Point(ActualWidth - 29, 62));
-                dc.DrawLine(Line("#C4D0D6", 2), new Point(ActualWidth - 29, 41), new Point(ActualWidth - 34, 49));
+                ChromeText(dc, "N", ActualWidth - 35, 17, 15, "#C4D0D6");
+                var northPen = new Pen(UiTheme.Brush("#C4D0D6"), 2);
+                dc.DrawLine(northPen, new Point(ActualWidth - 29, 41), new Point(ActualWidth - 29, 62));
+                dc.DrawLine(northPen, new Point(ActualWidth - 29, 41), new Point(ActualWidth - 34, 49));
                 double scaleLength = 300 * scale;
                 while (scaleLength > ActualWidth / 3) scaleLength /= 3;
                 while (scaleLength < 45) scaleLength *= 3;
-                dc.DrawRoundedRectangle(Brush("#E8101B24"), null, new Rect(15, ActualHeight - 48, scaleLength + 28, 36), 4, 4);
-                dc.DrawLine(Line("#BECDD5", 2), new Point(28, ActualHeight - 22), new Point(28 + scaleLength, ActualHeight - 22));
-                Text(dc, (scaleLength / scale).ToString("F0") + " m", 29, ActualHeight - 44, 10, "#BECDD5");
+                dc.DrawRoundedRectangle(UiTheme.Brush("#E8101B24"), null, new Rect(15, ActualHeight - 48, scaleLength + 28, 36), 4, 4);
+                dc.DrawLine(new Pen(UiTheme.Brush("#BECDD5"), 2), new Point(28, ActualHeight - 22), new Point(28 + scaleLength, ActualHeight - 22));
+                ChromeText(dc, (scaleLength / scale).ToString("F0") + " m", 29, ActualHeight - 44, 10, "#BECDD5");
                 if (HasMarkers && !PredictionMode)
                 {
                     double legendHeight=footprint!=null && (showSpread || showDamage)?66:26;
-                    dc.DrawRoundedRectangle(Brush("#E9101B24"), null, new Rect(ActualWidth - 202, ActualHeight - 15-legendHeight, 187, legendHeight), 4, 4);
-                    dc.DrawLine(Line("#D4F58C", 2), new Point(ActualWidth - 171, ActualHeight - 28), new Point(ActualWidth - 155, ActualHeight - 28));
-                    Text(dc, "绿色圈：平地理论射程", ActualWidth - 149, ActualHeight - 36, 10, "#D9E8CF");
+                    dc.DrawRoundedRectangle(UiTheme.Brush("#E9101B24"), null, new Rect(ActualWidth - 202, ActualHeight - 15-legendHeight, 187, legendHeight), 4, 4);
+                    dc.DrawLine(new Pen(UiTheme.Brush("#D4F58C"), 2), new Point(ActualWidth - 171, ActualHeight - 28), new Point(ActualWidth - 155, ActualHeight - 28));
+                    ChromeText(dc, "绿色圈：平地理论射程", ActualWidth - 149, ActualHeight - 36, 10, "#D9E8CF");
                     if(footprint!=null && (showSpread || showDamage)) {
-                        Text(dc,showSpread?"蓝色：理论散布椭圆":"散布已隐藏",ActualWidth-190,ActualHeight-73,10,"#94C9FF");
-                        Text(dc,showDamage?"虚线：100 / 25 伤害范围":"伤害范围已隐藏",ActualWidth-190,ActualHeight-55,10,"#E9AF89");
+                        ChromeText(dc,showSpread?"蓝色：理论散布椭圆":"散布已隐藏",ActualWidth-190,ActualHeight-73,10,"#94C9FF");
+                        ChromeText(dc,showDamage?"虚线：100 / 25 伤害范围":"伤害范围已隐藏",ActualWidth-190,ActualHeight-55,10,"#E9AF89");
                     }
                 }
-                if (MapImage == null) Text(dc, "坐标网格 · 可导入本地地图图片", Math.Max(18, ActualWidth - 258), ActualHeight - (HasMarkers ? 63 : 37), 12, "#8196A5");
+                if (MapImage == null) ChromeText(dc, "坐标网格 · 可导入本地地图图片", Math.Max(18, ActualWidth - 258), ActualHeight - (HasMarkers ? 63 : 37), 12, "#8196A5");
             }
         }
 

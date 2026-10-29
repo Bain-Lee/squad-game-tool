@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Net;
@@ -9,8 +10,12 @@ using System.Web.Script.Serialization;
 
 namespace SquadTools
 {
-    public sealed class ServerRecord
+    public sealed class ServerRecord : INotifyPropertyChanged
     {
+        private int? latencyMs;
+        private DateTime latencyAt;
+        public event PropertyChangedEventHandler PropertyChanged;
+        private void Changed(string property) { var changed = PropertyChanged; if (changed != null) changed(this, new PropertyChangedEventArgs(property)); }
         public string SessionId { get; set; }
         public string Name { get; set; }
         public string Map { get; set; }
@@ -35,6 +40,8 @@ namespace SquadTools
         public DateTime ObservedAt { get; set; }
         public DateTime RetrievedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+        public int? LatencyMs { get { return latencyMs; } set { int? measured = value.HasValue && value.Value >= 0 ? value : null; if (latencyMs == measured) return; latencyMs = measured; Changed("LatencyMs"); Changed("LatencyText"); Changed("LatencyToolTip"); } }
+        public DateTime LatencyAt { get { return latencyAt; } set { if (latencyAt == value) return; latencyAt = value; Changed("LatencyAt"); Changed("LatencyToolTip"); } }
         public string CheckState { get; set; }
         public bool PersistentMismatch { get; set; }
         public int DuplicateCount { get; set; }
@@ -47,6 +54,8 @@ namespace SquadTools
         public string RegisteredText { get { return Value(Registered); } }
         public string QueueText { get { return Value(Queue) + " / " + Value(ReservedQueue); } }
         public string ObservedText { get { return Value(Observed); } }
+        public string LatencyText { get { return LatencyMs.HasValue && LatencyMs.Value >= 0 ? LatencyMs.Value.ToString(CultureInfo.InvariantCulture) + " ms" : "—"; } }
+        public string LatencyToolTip { get { return "本机到服务器 IP 的 ICMP 往返延迟，不等于游戏内延迟。" + (LatencyAt == DateTime.MinValue ? "尚未测量。" : (LatencyMs.HasValue ? "最近测量 " : "未测得响应，可能超时或服务器不响应 ICMP。最近尝试 ") + LatencyAt.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) + "。"); } }
         public string StatusText { get { return (CheckState ?? "待核验") + (DuplicateCount > 1 ? " · 同入口×" + DuplicateCount : ""); } }
         public string SearchText { get { return (Name + " " + Map + " " + Mode + " " + Address).ToLowerInvariant(); } }
         public static string Value(int? value) { return value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "—"; }

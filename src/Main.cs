@@ -155,6 +155,7 @@ namespace SquadTools
             opacityToggle = (ToggleButton)root.FindName("OpacityToggle");
             themeToggle = (ToggleButton)root.FindName("ThemeToggle");
             UiTheme.Attach((FrameworkElement)opacityPopup.Child);
+            EnableOpacityTrackDrag();
             opacitySlider.ValueChanged += delegate {
                 windowOpacity = opacitySlider.Value / 100;
                 ((TextBlock)root.FindName("OpacityValue")).Text = opacitySlider.Value.ToString("0", CultureInfo.InvariantCulture) + "%";
@@ -176,6 +177,45 @@ namespace SquadTools
             opacityPopup.Child.PreviewKeyDown += dismiss;
             themeToggle.Checked += delegate { ApplyTheme(true); };
             themeToggle.Unchecked += delegate { ApplyTheme(false); };
+        }
+
+        private void EnableOpacityTrackDrag()
+        {
+            // Own the first track press as well as subsequent movement. WPF's
+            // move-to-point class handler otherwise consumes that first press.
+            opacitySlider.IsMoveToPointEnabled = false;
+            bool trackDragging = false;
+            Action<Point> update = delegate(Point point) {
+                var track = opacitySlider.Template.FindName("PART_Track", opacitySlider) as Track;
+                if (track == null) return;
+                double value = track.ValueFromPoint(opacitySlider.TranslatePoint(point, track));
+                if (!double.IsNaN(value) && !double.IsInfinity(value))
+                    opacitySlider.Value = Math.Max(opacitySlider.Minimum, Math.Min(opacitySlider.Maximum, Math.Round(value)));
+            };
+            Action release = delegate {
+                trackDragging = false;
+                if (opacitySlider.IsMouseCaptured) opacitySlider.ReleaseMouseCapture();
+            };
+            opacitySlider.PreviewMouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) {
+                opacitySlider.ApplyTemplate();
+                var track = opacitySlider.Template.FindName("PART_Track", opacitySlider) as Track;
+                var source = e.OriginalSource as DependencyObject;
+                if (track == null || (track.Thumb != null && source != null && (source == track.Thumb || track.Thumb.IsAncestorOf(source)))) return;
+                opacitySlider.Focus();
+                trackDragging = opacitySlider.CaptureMouse();
+                if (trackDragging) { update(e.GetPosition(opacitySlider)); e.Handled = true; }
+            };
+            opacitySlider.PreviewMouseMove += delegate(object sender, MouseEventArgs e) {
+                if (!trackDragging) return;
+                if (e.LeftButton != MouseButtonState.Pressed) { release(); return; }
+                update(e.GetPosition(opacitySlider)); e.Handled = true;
+            };
+            opacitySlider.PreviewMouseLeftButtonUp += delegate(object sender, MouseButtonEventArgs e) {
+                if (!trackDragging) return;
+                update(e.GetPosition(opacitySlider)); release(); e.Handled = true;
+            };
+            opacitySlider.LostMouseCapture += delegate { trackDragging = false; };
+            opacityPopup.Closed += delegate { release(); };
         }
 
         private void ApplyWindowOpacity()
@@ -939,8 +979,8 @@ namespace SquadTools
       <CheckBox x:Name='Pin' ToolTip='窗口置顶' AutomationProperties.Name='窗口置顶'><CheckBox.Style><Style TargetType='CheckBox' BasedOn='{StaticResource HeaderToggle}'/></CheckBox.Style><Path Width='18' Height='18' Stretch='Uniform' Data='M 7,2 L 15,2 M 9,2 L 9,8 6,12 6,13 16,13 16,12 13,8 13,2 M 11,13 L 11,20' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=CheckBox}}' StrokeThickness='1.6' StrokeStartLineCap='Round' StrokeEndLineCap='Round' StrokeLineJoin='Round'/></CheckBox>
       <ToggleButton x:Name='ThemeToggle' Style='{StaticResource HeaderToggle}' ToolTip='切换为浅色主题' AutomationProperties.Name='浅色与深色主题切换'>
         <Grid Width='20' Height='20'>
-          <Path Data='M 10,1 L 10,3 M 10,17 L 10,19 M 1,10 L 3,10 M 17,10 L 19,10 M 3.6,3.6 L 5,5 M 15,15 L 16.4,16.4 M 3.6,16.4 L 5,15 M 15,5 L 16.4,3.6 M 14,10 A 4,4 0 1 1 6,10 A 4,4 0 1 1 14,10' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' StrokeThickness='1.5' StrokeStartLineCap='Round' StrokeEndLineCap='Round'><Path.Style><Style TargetType='Path'><Style.Triggers><DataTrigger Binding='{Binding IsChecked, ElementName=ThemeToggle}' Value='True'><Setter Property='Visibility' Value='Collapsed'/></DataTrigger></Style.Triggers></Style></Path.Style></Path>
-          <Path Data='M 17.5,12 A 8,8 0 1 1 8,2.5 A 6.5,6.5 0 0 0 17.5,12 Z' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' StrokeThickness='1.5' StrokeLineJoin='Round'><Path.Style><Style TargetType='Path'><Setter Property='Visibility' Value='Collapsed'/><Style.Triggers><DataTrigger Binding='{Binding IsChecked, ElementName=ThemeToggle}' Value='True'><Setter Property='Visibility' Value='Visible'/></DataTrigger></Style.Triggers></Style></Path.Style></Path>
+          <Path x:Name='SunIcon' Data='M 10,1 L 10,3 M 10,17 L 10,19 M 1,10 L 3,10 M 17,10 L 19,10 M 3.6,3.6 L 5,5 M 15,15 L 16.4,16.4 M 3.6,16.4 L 5,15 M 15,5 L 16.4,3.6 M 14,10 A 4,4 0 1 1 6,10 A 4,4 0 1 1 14,10' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' StrokeThickness='1.5' StrokeStartLineCap='Round' StrokeEndLineCap='Round'><Path.Style><Style TargetType='Path'><Setter Property='Visibility' Value='Collapsed'/><Style.Triggers><DataTrigger Binding='{Binding IsChecked, ElementName=ThemeToggle}' Value='True'><Setter Property='Visibility' Value='Visible'/></DataTrigger></Style.Triggers></Style></Path.Style></Path>
+          <Path x:Name='MoonIcon' Data='M 17.5,12 A 8,8 0 1 1 8,2.5 A 6.5,6.5 0 0 0 17.5,12 Z' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' StrokeThickness='1.5' StrokeLineJoin='Round'><Path.Style><Style TargetType='Path'><Style.Triggers><DataTrigger Binding='{Binding IsChecked, ElementName=ThemeToggle}' Value='True'><Setter Property='Visibility' Value='Collapsed'/></DataTrigger></Style.Triggers></Style></Path.Style></Path>
         </Grid>
       </ToggleButton>
       <Button x:Name='Help' Style='{StaticResource HeaderButton}' ToolTip='使用帮助' AutomationProperties.Name='使用帮助'><Path Width='20' Height='20' Stretch='Uniform' Data='M 19,10 A 9,9 0 1 1 1,10 A 9,9 0 1 1 19,10 M 7.5,7 A 2.5,2.5 0 1 1 11,9.3 Q 10,10 10,11.5 M 10,14.5 L 10,14.8' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}' StrokeThickness='1.5' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/></Button>
@@ -1002,7 +1042,7 @@ namespace SquadTools
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-   <TextBlock Grid.Row='3' Text='Squad Tools · 0.8.0 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
+   <TextBlock Grid.Row='3' Text='Squad Tools · 0.8.1 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 

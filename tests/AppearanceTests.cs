@@ -34,6 +34,16 @@ internal static class AppearanceTests
     private static void Pump(Window window) { window.UpdateLayout(); window.Dispatcher.Invoke(DispatcherPriority.ApplicationIdle,new Action(delegate{})); window.UpdateLayout(); }
     private static Color ColorOf(Brush brush) { Check(brush is SolidColorBrush,"surface uses a solid theme brush"); return ((SolidColorBrush)brush).Color; }
     private static double Brightness(Color color) { return (color.R*0.2126+color.G*0.7152+color.B*0.0722)/255; }
+    private static void WarmSurface(Color color,string label)
+    {
+        Check(Brightness(color)>0.85 && color.R>=color.G && color.G>color.B && color.R-color.B<=22 && color.B>=225,label+": subtle warm off-white surface; actual="+color);
+    }
+    private static Color Sample(FrameworkElement element,int x,int y)
+    {
+        var bitmap=new RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth),(int)Math.Ceiling(element.ActualHeight),96,96,PixelFormats.Pbgra32);
+        bitmap.Render(element); var pixel=new byte[4]; bitmap.CopyPixels(new Int32Rect(x,y,1,1),pixel,4,0);
+        return Color.FromArgb(pixel[3],pixel[2],pixel[1],pixel[0]);
+    }
     private static void NativeOpacity(Window window,double expected,string label)
     {
         var handle=new WindowInteropHelper(window).Handle;
@@ -68,7 +78,9 @@ internal static class AppearanceTests
             var opacity=Named<ToggleButton>(window,"OpacityToggle"); var pin=Named<CheckBox>(window,"Pin");
             var theme=Named<ToggleButton>(window,"ThemeToggle"); var help=Named<Button>(window,"Help");
             var slider=Named<Slider>(window,"OpacitySlider"); var popup=Named<Popup>(window,"OpacityPopup");
+            var sun=Named<System.Windows.Shapes.Path>(window,"SunIcon"); var moon=Named<System.Windows.Shapes.Path>(window,"MoonIcon");
             Check(opacity!=null && pin!=null && theme!=null && help!=null && slider!=null && popup!=null,"all four appearance tools and opacity popover exist");
+            Check(sun!=null && moon!=null && !sun.IsVisible && moon.IsVisible,"dark mode displays the current-theme moon icon");
             Check(Named<FrameworkElement>(window,"ModeBadge")==null && Named<FrameworkElement>(window,"PageDescription")==null && Named<FrameworkElement>(window,"HeightHint")==null,"requested captions and offline badge are removed");
             Control[] tools={opacity,pin,theme,help}; double previous=-1;
             foreach(var tool in tools) {
@@ -124,10 +136,15 @@ internal static class AppearanceTests
             Near(profile.TargetGround-profile.WeaponGround,double.Parse(((string)Call(detail.Chart,"FormatHeight",(double?)profile.TargetGround)).Replace(" m",""),CultureInfo.InvariantCulture),0.051,"trajectory readouts show signed relative height rather than negative SDK elevation");
             opacity.IsChecked=true; Pump(window); Check(popup.IsOpen,"opacity popover can remain visible during a live theme change");
             var dark=ColorOf(window.Background); var darkCard=ColorOf(Named<Border>(window,"Sidebar").Background); var darkDetail=ColorOf(detail.Background);
+            var darkMap=Sample(map,2,2);
             var popupBorder=popup.Child as Border; Color? darkPopup=popupBorder==null?(Color?)null:ColorOf(popupBorder.Background);
             Check(Brightness(dark)<0.25 && Brightness(darkCard)<0.25,"default theme uses dark surfaces");
             theme.IsChecked=true; Pump(window); Pump(detail);
+            Check(sun.IsVisible && !moon.IsVisible,"light mode displays the current-theme sun icon");
             Check(Brightness(ColorOf(window.Background))>0.8 && Brightness(ColorOf(Named<Border>(window,"Sidebar").Background))>0.8,"theme icon updates the current window and card to light surfaces");
+            WarmSurface(ColorOf(window.Background),"application background"); WarmSurface(ColorOf(Named<Border>(window,"Sidebar").Background),"card background");
+            WarmSurface(Sample(map,2,2),"map frame background updates from an already-rendered dark viewport");
+            WarmSurface(ColorOf(detail.Background),"trajectory window background");
             Check(ColorOf(detail.Background)!=darkDetail && Brightness(ColorOf(detail.Background))>0.8,"an already-open trajectory window changes theme live");
             if(darkPopup.HasValue) Check(ColorOf(popupBorder.Background)!=darkPopup.Value,"an open opacity popover changes theme live");
             Check(Field<FiringSolution>(window,"solution")==solution && detail.Chart.Profile==profile,"theme changes preserve the current solution and profile model");
@@ -137,6 +154,9 @@ internal static class AppearanceTests
                 window.Width=size.Width; window.Height=size.Height;
                 foreach(bool light in new[]{false,true}) {
                     theme.IsChecked=light; Pump(window);
+                    Check(sun.IsVisible==light && moon.IsVisible!=light,"theme icon describes the visible theme at each viewport size");
+                    if(light) WarmSurface(Sample(map,2,2),"light map frame stays warm at each viewport size");
+                    else Check(Sample(map,2,2)==darkMap,"returning to dark restores the map frame background");
                     foreach(var tool in tools) { var topLeft=tool.TranslatePoint(new Point(),window); Check(topLeft.X>=0 && topLeft.Y>=0 && topLeft.X+tool.ActualWidth<window.ActualWidth,"icon toolbar remains inside each supported viewport"); }
                     Capture(window,Path.Combine(output,"appearance-"+(light?"light":"dark")+"-"+(int)size.Width+".png"));
                 }

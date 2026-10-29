@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -9,6 +11,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Markup;
 using System.Windows.Input;
+using System.Windows.Data;
+using System.Windows.Media;
 using System.Windows.Threading;
 using System.Xml;
 
@@ -17,6 +21,7 @@ namespace SquadTools
     public sealed class ServerBrowserView : Border, IDisposable
     {
         private readonly EosClient client;
+        private readonly ServerLatencyClient latencyClient;
         private readonly Func<DateTime> utcNow;
         private readonly CountEvidence evidence = new CountEvidence();
         private readonly HashSet<string> favorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -30,7 +35,14 @@ namespace SquadTools
         private readonly TextBlock detailTitle, detailMeta, detailReported, detailRegistered, detailObserved, detailQueue, detailInfo;
         private readonly Button refresh, check, favorite, cancel, follow;
         private readonly DispatcherTimer timer;
+        private readonly DispatcherTimer latencyUpdates;
         private CancellationTokenSource operation;
+        private CancellationTokenSource latencyOperation;
+        private Task latencyTask = Task.FromResult(0);
+        private int latencyGeneration;
+        private bool latencyDirty;
+        private string sortMember = "LatencyMs";
+        private ListSortDirection sortDirection = ListSortDirection.Ascending;
         private bool active, busy, disposed, refreshPending, favoritesReadable = true;
         private DateTime lastAttempt;
         private ServerSnapshot snapshot = new ServerSnapshot();
@@ -42,8 +54,11 @@ namespace SquadTools
         public ServerBrowserView(bool testing) : this(testing, new EosClient(), Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "server-favorites.xml"), () => DateTime.UtcNow) { }
 
         internal ServerBrowserView(bool testing, EosClient eosClient, string favoritesFile, Func<DateTime> clock)
+            : this(testing, eosClient, favoritesFile, clock, new ServerLatencyClient()) { }
+
+        internal ServerBrowserView(bool testing, EosClient eosClient, string favoritesFile, Func<DateTime> clock, ServerLatencyClient latency)
         {
-            testMode = testing; client = eosClient; favoritePath = favoritesFile; utcNow = clock;
+            testMode = testing; client = eosClient; favoritePath = favoritesFile; utcNow = clock; latencyClient = latency;
             UiTheme.Attach(this);
             Child = (UIElement)XamlReader.Parse(UiTheme.Xaml(Layout));
             var root = (FrameworkElement)Child;
@@ -59,8 +74,9 @@ namespace SquadTools
             foreach (var box in new[] { favoritesOnly, populated, fold, hideMismatch }) { box.Checked += delegate { ApplyFilter(); }; box.Unchecked += delegate { ApplyFilter(); }; }
             refresh.Click += async delegate { await Refresh(); };
             check.Click += async delegate { await CheckSelected(); };
-            cancel.Click += delegate { refreshPending = false; if (operation != null) operation.Cancel(); };
+            cancel.Click += delegate { refreshPending = false; if (operation != null) operation.Cancel(); CancelLatency(); };
             table.SelectionChanged += delegate { ShowDetail(); };
+            table.Sorting += delegate(object sender, DataGridSortingEventArgs e) { e.Handled = true; SortColumn(e.Column); };
             follow.Click += delegate {
                 var selected = table.SelectedItem as ServerRecord;
                 if (selected != null && selected.SessionId == followedSession) { if (FollowStopped != null) FollowStopped(); }
@@ -74,7 +90,10 @@ namespace SquadTools
             favorite.Click += delegate { ToggleFavorite(); };
             timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             timer.Tick += async delegate { await Pulse(); };
+            latencyUpdates = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            latencyUpdates.Tick += delegate { FlushLatencyRows(); };
             if (!testMode) LoadFavorites();
+            UpdateSortIndicators();
             ShowDetail();
         }
 
@@ -82,11 +101,12 @@ namespace SquadTools
         {
             if (disposed) return;
             active = value;
-            if (!value) { if (followedSession == null) timer.Stop(); if (operation != null) operation.Cancel(); return; }
+            if (!value) { CancelLatency(); if (followedSession == null) timer.Stop(); if (operation != null) operation.Cancel(); return; }
             ApplyFilter();
             if (!testMode) {
                 timer.Start();
                 refreshPending = snapshot.RetrievedAt == DateTime.MinValue || utcNow() - snapshot.RetrievedAt > TimeSpan.FromSeconds(60);
+                if (!refreshPending) StartLatency();
                 await Pulse();
             }
         }
@@ -112,7 +132,7 @@ namespace SquadTools
         private async Task Pulse()
         {
             if (disposed || !active && followedSession == null || testMode) return;
-            if (ExpireEvidence()) ApplyFilter();
+            if (ExpireEvidence() | ExpireLatency()) ApplyFilter();
             UpdateButtons();
             var elapsed = utcNow() - lastAttempt;
             if (!busy && (elapsed >= TimeSpan.FromSeconds(60) || refreshPending && elapsed >= TimeSpan.FromSeconds(10))) await Refresh();
@@ -122,26 +142,32 @@ namespace SquadTools
         {
             if (busy || disposed || testMode) return;
             if (utcNow() - lastAttempt < TimeSpan.FromSeconds(10)) { status.Text = "刚刚查询过，请稍等几秒再刷新。"; return; }
-            refreshPending = false; lastAttempt = utcNow(); Begin();
+            refreshPending = false; lastAttempt = utcNow(); CancelLatency(); Begin();
             try
             {
                 status.Text = "正在获取服务器列表…"; HasRequestedNetwork = true;
                 var next = await client.GetServers(operation.Token);
                 operation.Token.ThrowIfCancellationRequested();
                 var previous = snapshot.Servers.ToDictionary(s => s.SessionId);
+                var priorLatency = snapshot.Servers.Where(s => !string.IsNullOrEmpty(s.Address)).GroupBy(s => s.Address).ToDictionary(g => g.Key, g => g.OrderByDescending(s => s.LatencyAt).First(), StringComparer.OrdinalIgnoreCase);
                 foreach (var server in next.Servers) {
                     server.Favorite = favorites.Contains(server.FavoriteKey); ServerRecord old;
                     if (previous.TryGetValue(server.SessionId, out old)) {
                         if (server.Reported != old.Reported) evidence.Reset(server.SessionId);
                         if (utcNow() - old.ObservedAt < TimeSpan.FromSeconds(180)) { server.Observed = old.Observed; server.ObservedAt = old.ObservedAt; server.CheckState = server.Reported == old.Reported ? old.CheckState : "人数已变化 · 待复核"; server.PersistentMismatch = old.PersistentMismatch && server.Reported == old.Reported; }
                     }
+                    if (!string.IsNullOrEmpty(server.Address) && priorLatency.TryGetValue(server.Address, out old)) {
+                        server.LatencyAt = old.LatencyAt;
+                        if (utcNow() - old.LatencyAt >= TimeSpan.Zero && utcNow() - old.LatencyAt < TimeSpan.FromSeconds(60)) server.LatencyMs = old.LatencyMs;
+                    }
                 }
                 snapshot = next; evidence.Prune(next.Servers.Select(s => s.SessionId)); ApplyFilter();
+                StartLatency();
                 status.Text = "列表已更新。人数来自不同口径，核验结果不等同于真人活跃人数。";
                 if (followedSession != null && FollowedServerUpdated != null) FollowedServerUpdated(snapshot.Servers.Find(s => s.SessionId == followedSession));
                 if ((active || followedSession == null) && autoCheck.IsChecked == true) {
                     var candidates = ServerData.Filter(snapshot.Servers, search.Text, (string)kind.SelectedItem, favoritesOnly.IsChecked == true, populated.IsChecked == true, fold.IsChecked == true, false)
-                        .Where(s => s.Reported.GetValueOrDefault() > 0).Take(10).ToList();
+                        .Where(s => s.Reported.GetValueOrDefault() > 0).OrderByDescending(s => s.Reported).Take(10).ToList();
                     await Verify(candidates, operation.Token);
                 }
             }
@@ -191,17 +217,148 @@ namespace SquadTools
             return changed;
         }
 
+        private void CancelLatency()
+        {
+            latencyGeneration++;
+            if (latencyOperation != null) latencyOperation.Cancel();
+            latencyUpdates.Stop(); latencyDirty = false;
+        }
+
+        private bool ExpireLatency()
+        {
+            bool changed = false;
+            foreach (var server in snapshot.Servers) {
+                var age = utcNow() - server.LatencyAt;
+                if (server.LatencyMs.HasValue && (server.LatencyAt == DateTime.MinValue || age < TimeSpan.Zero || age >= TimeSpan.FromSeconds(60))) { server.LatencyMs = null; changed = true; }
+            }
+            return changed;
+        }
+
+        private void StartLatency()
+        {
+            CancelLatency();
+            if (testMode || disposed || !active || snapshot.Servers.Count == 0 || latencyClient == null) return;
+            var current = snapshot;
+            int generation = latencyGeneration;
+            var cancellation = new CancellationTokenSource(); latencyOperation = cancellation;
+            var byAddress = current.Servers.Select(s => new { Address = ServerData.PublicAddress(s.Address), Server = s }).Where(s => s.Address != "").GroupBy(s => s.Address).ToDictionary(g => g.Key, g => g.Select(s => s.Server).ToList(), StringComparer.OrdinalIgnoreCase);
+            foreach (var server in current.Servers) {
+                var age = utcNow() - server.LatencyAt;
+                if (age < TimeSpan.Zero) { server.LatencyMs = null; server.LatencyAt = DateTime.MinValue; }
+                else if (age >= TimeSpan.FromSeconds(60)) server.LatencyMs = null;
+            }
+            // A minute-long list refresh can interrupt a large ICMP sweep. Start
+            // with never-measured/oldest hosts so the tail cannot starve forever.
+            var addresses = byAddress.OrderBy(pair => pair.Value.Max(s => s.LatencyAt)).Select(pair => pair.Key).ToArray();
+            latencyTask = MeasureLatency(current, generation, byAddress, addresses, cancellation);
+            UpdateButtons();
+        }
+
+        private async Task MeasureLatency(ServerSnapshot current, int generation, Dictionary<string,List<ServerRecord>> byAddress, string[] addresses, CancellationTokenSource cancellation)
+        {
+            try {
+                HasRequestedNetwork = true;
+                await latencyClient.Measure(addresses, delegate(ServerLatencyResult result) {
+                    Action apply = delegate {
+                        if (disposed || !active || cancellation.IsCancellationRequested || generation != latencyGeneration || snapshot != current) return;
+                        List<ServerRecord> records;
+                        if (!byAddress.TryGetValue(result.Address, out records)) return;
+                        foreach (var server in records) { server.LatencyMs = result.Milliseconds; server.LatencyAt = result.MeasuredAt; }
+                        latencyDirty = true;
+                        if (!latencyUpdates.IsEnabled) latencyUpdates.Start();
+                    };
+                    if (Dispatcher.CheckAccess()) apply(); else Dispatcher.BeginInvoke(apply);
+                }, cancellation.Token);
+            } catch (OperationCanceledException) { }
+            catch (Exception) { /* An unavailable ICMP path leaves latency unknown. */ }
+            finally {
+                if (generation == latencyGeneration && !disposed) FlushLatencyRows();
+                if (latencyOperation == cancellation) latencyOperation = null;
+                cancellation.Dispose();
+                if (!disposed) UpdateButtons();
+            }
+        }
+
+        private void FlushLatencyRows()
+        {
+            latencyUpdates.Stop();
+            if (!latencyDirty || disposed) return;
+            latencyDirty = false;
+            var scroll = Descendant<ScrollViewer>(table);
+            double offset = scroll == null ? 0 : scroll.VerticalOffset;
+            object selected = table.SelectedItem;
+            table.Items.Refresh();
+            if (selected != null && table.Items.Contains(selected) && table.SelectedItem != selected) table.SelectedItem = selected;
+            if (scroll != null) scroll.ScrollToVerticalOffset(offset);
+            ShowDetail();
+        }
+
+        private static T Descendant<T>(DependencyObject parent) where T : DependencyObject
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++) {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T) return (T)child;
+                var nested = Descendant<T>(child); if (nested != null) return nested;
+            }
+            return null;
+        }
+
+        private static string ColumnMember(DataGridColumn column)
+        {
+            if (!string.IsNullOrEmpty(column.SortMemberPath)) return column.SortMemberPath;
+            var bound = column as DataGridBoundColumn;
+            var binding = bound == null ? null : bound.Binding as Binding;
+            return binding == null || binding.Path == null ? "" : binding.Path.Path;
+        }
+
+        private void SortColumn(DataGridColumn column)
+        {
+            string member = ColumnMember(column); if (member == "") return;
+            sortDirection = member == sortMember && sortDirection == ListSortDirection.Ascending ? ListSortDirection.Descending : ListSortDirection.Ascending;
+            sortMember = member;
+            ApplyRowSort(); UpdateSortIndicators();
+        }
+
+        private void ApplyRowSort()
+        {
+            var view = CollectionViewSource.GetDefaultView(table.ItemsSource) as ListCollectionView;
+            if (view != null) view.CustomSort = new ServerRowComparer(sortMember, sortDirection);
+        }
+
+        private void UpdateSortIndicators()
+        {
+            foreach (var column in table.Columns) column.SortDirection = ColumnMember(column) == sortMember ? (ListSortDirection?)sortDirection : null;
+        }
+
+        private sealed class ServerRowComparer : IComparer
+        {
+            private readonly string member;
+            private readonly ListSortDirection direction;
+            private readonly PropertyDescriptor property;
+            public ServerRowComparer(string member, ListSortDirection direction) { this.member = member; this.direction = direction; property = TypeDescriptor.GetProperties(typeof(ServerRecord))[member]; }
+            public int Compare(object first, object second)
+            {
+                var a = first as ServerRecord; var b = second as ServerRecord;
+                if (a == null || b == null) return 0;
+                if (member == "LatencyMs" && a.LatencyMs.HasValue != b.LatencyMs.HasValue) return a.LatencyMs.HasValue ? -1 : 1;
+                object av = property == null ? null : property.GetValue(a), bv = property == null ? null : property.GetValue(b);
+                int result = Comparer.Default.Compare(av, bv);
+                if (result != 0) return direction == ListSortDirection.Ascending ? result : -result;
+                result = StringComparer.CurrentCultureIgnoreCase.Compare(a.Name, b.Name);
+                return result != 0 ? result : StringComparer.Ordinal.Compare(a.SessionId, b.SessionId);
+            }
+        }
+
         private void ApplyFilter()
         {
             if (table == null || kind.SelectedItem == null) return;
             string selectedId = (table.SelectedItem as ServerRecord) == null ? null : ((ServerRecord)table.SelectedItem).SessionId;
-            ExpireEvidence();
+            ExpireEvidence(); ExpireLatency();
             var rows = ServerData.Filter(snapshot.Servers, search.Text, (string)kind.SelectedItem, favoritesOnly.IsChecked == true, populated.IsChecked == true, fold.IsChecked == true, hideMismatch.IsChecked == true);
             var sorting = table.Items.SortDescriptions.ToArray();
-            var directions = table.Columns.Select(column => column.SortDirection).ToArray();
+            if (sorting.Length > 0) { sortMember = sorting[0].PropertyName; sortDirection = sorting[0].Direction; }
             table.ItemsSource = rows;
-            foreach (var sort in sorting) table.Items.SortDescriptions.Add(sort);
-            for (int i = 0; i < directions.Length; i++) table.Columns[i].SortDirection = directions[i];
+            ApplyRowSort(); UpdateSortIndicators();
             table.SelectedItem = rows.Find(s => s.SessionId == selectedId);
             if (table.SelectedItem == null && rows.Count > 0) table.SelectedIndex = 0;
             int aliases = snapshot.Servers.Where(s => s.Endpoint != "").GroupBy(s => s.Endpoint).Sum(g => Math.Max(0, g.Count() - 1));
@@ -220,6 +377,7 @@ namespace SquadTools
             detail.Text=server==null?"地图跟随需单独启用":(server.CheckState??"待核验")+(server.ObservedAt==DateTime.MinValue?"":" · "+server.ObservedAt.ToLocalTime().ToString("HH:mm"))+(server.DuplicateCount>1?" · 同入口 ×"+server.DuplicateCount:"");
             string full=server==null?"选中服务器后查看状态，点击启用地图跟随后再手动切换页面。":server.Name + "\n" + server.Kind + "  ·  " + (server.Endpoint == "" ? "连接地址未提供" : server.Endpoint) + "  ·  " + server.Version + (server.Password ? "  ·  需要密码" : "") +
                 "\n图层："+server.Map+
+                "\n延迟："+server.LatencyText+"。"+server.LatencyToolTip+
                 "\n上报 " + ServerRecord.Value(server.Reported) + " 人 / EOS 登记 " + ServerRecord.Value(server.Registered) + " 人 / 可见成员 " + ServerRecord.Value(server.Observed) + " 人。公开容量 " + ServerRecord.Value(server.Capacity) + "；排队：普通 " + ServerRecord.Value(server.Queue) + "，预留 " + ServerRecord.Value(server.ReservedQueue) + "。" +
                 "\n" + (server.ObservedAt == DateTime.MinValue ? "此服务器尚未核验。" : "最近核验 " + server.ObservedAt.ToLocalTime().ToString("HH:mm:ss") + " · " + server.CheckState + "。") +
                 (server.DuplicateCount > 1 ? " 有 " + server.DuplicateCount + " 条记录指向相同连接入口，可取消折叠查看；尚不能确认原服身份。" : "") +
@@ -231,7 +389,7 @@ namespace SquadTools
         private void UpdateButtons()
         {
             var selected = table.SelectedItem as ServerRecord;
-            refresh.IsEnabled = !busy; cancel.IsEnabled = busy; check.IsEnabled = !busy && selected != null;
+            refresh.IsEnabled = !busy; cancel.IsEnabled = busy || latencyOperation != null; check.IsEnabled = !busy && selected != null;
             favorite.IsEnabled = selected != null && favoritesReadable; favorite.Content = selected != null && selected.Favorite ? "已收藏" : "收藏";
             follow.IsEnabled = selected != null && !disposed;
             follow.Content = selected != null && selected.SessionId == followedSession ? "停止跟随此服务器" : followedSession == null ? "启用地图跟随" : "改为跟随所选服务器";
@@ -278,13 +436,19 @@ namespace SquadTools
             status.Text = "验证预览 · " + (sample.RetrievedAt == DateTime.MinValue ? "离线测试数据" : "已取得的数据快照，非实时刷新");
         }
 
-        public void Dispose() { if (disposed) return; disposed = true; timer.Stop(); if (operation != null) operation.Cancel(); if (!busy) client.Dispose(); }
+        public void Dispose() { if (disposed) return; disposed = true; timer.Stop(); CancelLatency(); if (operation != null) operation.Cancel(); if (!busy) client.Dispose(); }
 
         private const string Layout = @"
 <Grid xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
  <Grid.Resources>
   <Style TargetType='CheckBox'><Setter Property='Foreground' Value='#A6B2C1'/><Setter Property='FontSize' Value='11'/><Setter Property='Margin' Value='0,0,18,0'/><Setter Property='VerticalAlignment' Value='Center'/></Style>
-  <Style TargetType='DataGridColumnHeader'><Setter Property='Background' Value='#1D2835'/><Setter Property='Foreground' Value='#98A8BB'/><Setter Property='Padding' Value='10,12'/><Setter Property='BorderThickness' Value='0'/></Style>
+  <Style TargetType='DataGridColumnHeader'><Setter Property='Background' Value='#1D2835'/><Setter Property='Foreground' Value='#98A8BB'/><Setter Property='Padding' Value='10,12'/><Setter Property='BorderThickness' Value='0'/><Setter Property='Cursor' Value='Hand'/>
+   <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='DataGridColumnHeader'><Border Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}'><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions><ContentPresenter VerticalAlignment='Center'/><TextBlock x:Name='SortGlyph' Grid.Column='1' Margin='6,0,0,0' Foreground='{TemplateBinding Foreground}' Visibility='Collapsed' FontSize='12' VerticalAlignment='Center'/></Grid></Border><ControlTemplate.Triggers><Trigger Property='SortDirection' Value='Ascending'><Setter TargetName='SortGlyph' Property='Text' Value='↑'/><Setter TargetName='SortGlyph' Property='Visibility' Value='Visible'/></Trigger><Trigger Property='SortDirection' Value='Descending'><Setter TargetName='SortGlyph' Property='Text' Value='↓'/><Setter TargetName='SortGlyph' Property='Visibility' Value='Visible'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <Style x:Key='FixedFilterExpander' TargetType='Expander'><Setter Property='HorizontalAlignment' Value='Stretch'/><Setter Property='VerticalAlignment' Value='Top'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Expander'>
+   <Grid><Grid.RowDefinitions><RowDefinition Height='24'/><RowDefinition Height='Auto'/></Grid.RowDefinitions><ToggleButton x:Name='AdvancedFilterToggle' Content='{TemplateBinding Header}' IsChecked='{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}' HorizontalAlignment='Right' Foreground='#A6B2C1' FontSize='11' Height='24' Cursor='Hand'><ToggleButton.Template><ControlTemplate TargetType='ToggleButton'><Border Background='Transparent' CornerRadius='6' Padding='6,2'><StackPanel Orientation='Horizontal'><TextBlock x:Name='Chevron' Text='⌄' Foreground='{TemplateBinding Foreground}' FontSize='14' Margin='0,0,5,0' VerticalAlignment='Center'/><ContentPresenter VerticalAlignment='Center'/></StackPanel></Border><ControlTemplate.Triggers><Trigger Property='IsChecked' Value='True'><Setter TargetName='Chevron' Property='Text' Value='⌃'/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton><ContentPresenter x:Name='ExpandedOptions' Grid.Row='1' ContentSource='Content' Margin='0,10,0,0' Visibility='Collapsed'/></Grid>
+   <ControlTemplate.Triggers><Trigger Property='IsExpanded' Value='True'><Setter TargetName='ExpandedOptions' Property='Visibility' Value='Visible'/></Trigger></ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter></Style>
   <Style TargetType='DataGridRow'><Setter Property='Background' Value='#141D27'/><Setter Property='Foreground' Value='#DCE4EE'/><Setter Property='MinHeight' Value='44'/><Style.Triggers><Trigger Property='IsSelected' Value='True'><Setter Property='Background' Value='#283E55'/><Setter Property='Foreground' Value='#FFFFFF'/></Trigger></Style.Triggers></Style>
   <Style TargetType='DataGridCell'><Setter Property='BorderThickness' Value='0'/><Setter Property='Padding' Value='10,6'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='DataGridCell'><Border Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}'><ContentPresenter VerticalAlignment='Center'/></Border></ControlTemplate></Setter.Value></Setter><Style.Triggers><Trigger Property='IsSelected' Value='True'><Setter Property='Background' Value='#283E55'/><Setter Property='Foreground' Value='#FFFFFF'/></Trigger></Style.Triggers></Style>
  </Grid.Resources>
@@ -292,17 +456,18 @@ namespace SquadTools
  <DockPanel LastChildFill='False'><StackPanel DockPanel.Dock='Left'><TextBlock Text='服务器' FontSize='25' FontWeight='SemiBold'/><TextBlock Text='查看状态，按需跟随地图。' Foreground='#8F9EAF' FontSize='12' Margin='0,6,0,0'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Top'><Button x:Name='Cancel' Content='取消' Background='Transparent' Margin='0,0,8,0'/><Button x:Name='Refresh' Content='刷新' Background='#3B628D' Foreground='#EDF4FF'/></StackPanel></DockPanel>
  <StackPanel Grid.Row='1' Margin='0,0,0,12'>
   <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition Width='116'/></Grid.ColumnDefinitions><Grid><TextBox x:Name='Search' ToolTip='搜索名称、地图、模式或 IP' FontSize='13' Padding='10,8'/><TextBlock Text='搜索服务器、地图或 IP' IsHitTestVisible='False' Foreground='#718398' FontSize='12' VerticalAlignment='Center' Margin='11,0'><TextBlock.Style><Style TargetType='TextBlock'><Setter Property='Visibility' Value='Collapsed'/><Style.Triggers><DataTrigger Binding='{Binding Text, ElementName=Search}' Value=''><Setter Property='Visibility' Value='Visible'/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid><ComboBox x:Name='Kind' Grid.Column='2' TextElement.Foreground='#EDF1F7'><ComboBox.ItemTemplate><DataTemplate><TextBlock Text='{Binding}' Foreground='#EDF1F7'/></DataTemplate></ComboBox.ItemTemplate></ComboBox></Grid>
-  <Grid Margin='0,12,0,0'><Grid.ColumnDefinitions><ColumnDefinition Width='Auto'/><ColumnDefinition Width='Auto'/><ColumnDefinition/></Grid.ColumnDefinitions><CheckBox x:Name='FavoritesOnly' Content='仅收藏'/><CheckBox x:Name='Populated' Grid.Column='1' Content='隐藏空服' ToolTip='隐藏明确上报为空的服务器；未知人数保留。'/><Expander x:Name='AdvancedFilters' Grid.Column='2' Header='更多筛选' HorizontalAlignment='Right'><WrapPanel Margin='12,10,0,0'><CheckBox x:Name='Fold' Content='合并相同入口' IsChecked='True' ToolTip='折叠相同 IP 与端口的多条记录，不判断原服归属。'/><CheckBox x:Name='HideMismatch' Content='隐藏持续差异' ToolTip='仅隐藏连续核验存在显著差异的记录；不能据此确认阴兵。'/><CheckBox x:Name='AutoCheck' Content='自动核验前 10 台' IsChecked='True'/></WrapPanel></Expander></Grid>
+  <Grid Margin='0,12,0,0'><StackPanel Orientation='Horizontal' HorizontalAlignment='Left' VerticalAlignment='Top' Height='24'><CheckBox x:Name='FavoritesOnly' Content='仅收藏'/><CheckBox x:Name='Populated' Content='隐藏空服' ToolTip='隐藏明确上报为空的服务器；未知人数保留。'/></StackPanel><Expander x:Name='AdvancedFilters' Header='更多筛选' Style='{StaticResource FixedFilterExpander}'><WrapPanel HorizontalAlignment='Right'><CheckBox x:Name='Fold' Content='合并相同入口' IsChecked='True' ToolTip='折叠相同 IP 与端口的多条记录，不判断原服归属。'/><CheckBox x:Name='HideMismatch' Content='隐藏持续差异' ToolTip='仅隐藏连续核验存在显著差异的记录；不能据此确认阴兵。'/><CheckBox x:Name='AutoCheck' Content='自动核验前 10 台' IsChecked='True'/></WrapPanel></Expander></Grid>
  </StackPanel>
  <Grid Grid.Row='2'><Grid.RowDefinitions><RowDefinition Height='22'/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><TextBlock x:Name='Summary' Foreground='#AAB9CB' FontSize='11' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, RelativeSource={RelativeSource Self}}'/><TextBlock x:Name='FollowStatus' Grid.Column='1' Text='未启用地图跟随' Foreground='#9CBDE5' FontSize='11' HorizontalAlignment='Right' MaxWidth='480' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, RelativeSource={RelativeSource Self}}'/><TextBlock x:Name='Status' Grid.Row='1' Grid.ColumnSpan='2' Text='每分钟刷新' Foreground='#7E91A7' FontSize='11' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, RelativeSource={RelativeSource Self}}'/></Grid>
  <DataGrid x:Name='Servers' Grid.Row='3' AutoGenerateColumns='False' IsReadOnly='True' CanUserAddRows='False' CanUserDeleteRows='False' CanUserReorderColumns='False' EnableRowVirtualization='True' EnableColumnVirtualization='True' SelectionMode='Single' SelectionUnit='FullRow' HeadersVisibility='Column' GridLinesVisibility='Horizontal' HorizontalGridLinesBrush='#222F3E' BorderBrush='#2A3441' Background='#111A24' RowHeaderWidth='0' FontSize='12' ScrollViewer.CanContentScroll='True'>
   <DataGrid.Columns>
    <DataGridTextColumn Header='☆' Binding='{Binding FavoriteText}' Width='36'/>
    <DataGridTextColumn Header='服务器' Binding='{Binding Name}' Width='*' MinWidth='220'><DataGridTextColumn.ElementStyle><Style TargetType='TextBlock'><Setter Property='TextTrimming' Value='CharacterEllipsis'/><Setter Property='ToolTip' Value='{Binding Name}'/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
-   <DataGridTextColumn Header='地图' Binding='{Binding Map}' Width='190'><DataGridTextColumn.ElementStyle><Style TargetType='TextBlock'><Setter Property='TextTrimming' Value='CharacterEllipsis'/><Setter Property='ToolTip' Value='{Binding Map}'/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
-   <DataGridTextColumn Header='上报人数' Binding='{Binding PlayersText}' SortMemberPath='Reported' Width='94'/>
-   <DataGridTextColumn Header='可见成员' Binding='{Binding ObservedText}' SortMemberPath='Observed' Width='94'/>
-   <DataGridTextColumn Header='核验状态' Binding='{Binding StatusText}' Width='180'><DataGridTextColumn.ElementStyle><Style TargetType='TextBlock'><Setter Property='TextTrimming' Value='CharacterEllipsis'/><Setter Property='ToolTip' Value='{Binding StatusText}'/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+   <DataGridTextColumn Header='地图' Binding='{Binding Map}' Width='180'><DataGridTextColumn.ElementStyle><Style TargetType='TextBlock'><Setter Property='TextTrimming' Value='CharacterEllipsis'/><Setter Property='ToolTip' Value='{Binding Map}'/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+   <DataGridTextColumn Header='上报人数' Binding='{Binding PlayersText}' SortMemberPath='Reported' Width='90'/>
+   <DataGridTextColumn Header='可见成员' Binding='{Binding ObservedText}' SortMemberPath='Observed' Width='90'/>
+   <DataGridTextColumn Header='延迟 / ms' Binding='{Binding LatencyText}' SortMemberPath='LatencyMs' Width='94'><DataGridTextColumn.HeaderStyle><Style TargetType='DataGridColumnHeader' BasedOn='{StaticResource {x:Type DataGridColumnHeader}}'><Setter Property='ToolTip' Value='本机到服务器 IP 的 ICMP 往返延迟，非游戏内延迟。未测得或不响应时显示 —，两种排序均将未知放最后；点击切换升序或降序。'/></Style></DataGridTextColumn.HeaderStyle><DataGridTextColumn.ElementStyle><Style TargetType='TextBlock'><Setter Property='ToolTip' Value='{Binding LatencyToolTip}'/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+   <DataGridTextColumn Header='核验状态' Binding='{Binding StatusText}' Width='160'><DataGridTextColumn.ElementStyle><Style TargetType='TextBlock'><Setter Property='TextTrimming' Value='CharacterEllipsis'/><Setter Property='ToolTip' Value='{Binding StatusText}'/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
   </DataGrid.Columns>
  </DataGrid>
  <Border x:Name='DetailCard' Grid.Row='4' Background='#171F29' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13' Padding='18,16' Margin='0,14,0,0'>

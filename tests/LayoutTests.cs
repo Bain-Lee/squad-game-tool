@@ -112,8 +112,14 @@ internal static class LayoutTests
         var snapshot=new ServerSnapshot{RetrievedAt=DateTime.UtcNow}; snapshot.Servers.Add(server); browser.LoadSmokeSnapshot(snapshot);
         foreach(var size in new[]{new Size(1060,740),new Size(1280,850),new Size(1440,900)}) {
             window.Width=size.Width; window.Height=size.Height;
+            var advanced=(Expander)view.FindName("AdvancedFilters"); advanced.IsExpanded=false; Pump(window);
+            var filterHeader=Children<ToggleButton>(advanced).FirstOrDefault(button=>Convert.ToString(button.Content)=="更多筛选");
+            Check(filterHeader!=null,"advanced-filter heading exposes its own stable toggle");
+            Rect collapsedHeader=Bounds(filterHeader,view);
             foreach(bool expanded in new[]{false,true}) {
-                ((Expander)view.FindName("AdvancedFilters")).IsExpanded=expanded; Pump(window);
+                advanced.IsExpanded=expanded; Pump(window);
+                Rect currentHeader=Bounds(filterHeader,view);
+                Check(Math.Abs(currentHeader.Left-collapsedHeader.Left)<0.5 && Math.Abs(currentHeader.Top-collapsedHeader.Top)<0.5,"expanding filters does not move its heading: "+size+" / "+collapsedHeader+" -> "+currentHeader);
                 var card=(Border)view.FindName("DetailCard"); Inside(card,view,"detail card fits viewport");
                 Check(!Children<ScrollViewer>(card).Any(),"server detail card contains no scroll viewer");
                 foreach(string id in new[]{"DetailTitle","DetailMeta","DetailReported","DetailRegistered","DetailObserved","DetailQueue","Detail","DetailInfo","Follow","Check","Favorite"}) Inside((FrameworkElement)view.FindName(id),card,"server detail item stays within card: "+id);

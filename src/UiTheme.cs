@@ -20,10 +20,10 @@ namespace SquadTools
         private static readonly ResourceDictionary resources = new ResourceDictionary();
         private static readonly Dictionary<string, ColorSource> sources = new Dictionary<string, ColorSource>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, string> lightColors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-            { "#101720", "#F3F6FA" }, { "#101B24", "#FFFFFF" }, { "#111820", "#FFFFFF" },
-            { "#111A24", "#FFFFFF" }, { "#141D27", "#FFFFFF" }, { "#141F2B", "#F8FAFC" },
-            { "#171F29", "#FFFFFF" }, { "#1B2531", "#E6ECF4" }, { "#1D2733", "#FFFFFF" },
-            { "#1D2835", "#EAF0F6" }, { "#202B38", "#F6F8FB" }, { "#242D39", "#FFFFFF" },
+            { "#101720", "#F6F4EF" }, { "#101B24", "#FAF8F3" }, { "#111820", "#FCFAF6" },
+            { "#111A24", "#FCFAF6" }, { "#141D27", "#FCFAF6" }, { "#141F2B", "#F8F6F1" },
+            { "#171F29", "#FCFAF6" }, { "#1B2531", "#EAECEB" }, { "#1D2733", "#FCFAF6" },
+            { "#1D2835", "#F0EFEA" }, { "#202B38", "#F8F6F1" }, { "#242D39", "#FCFAF6" },
             { "#253548", "#EDF3FB" }, { "#26313F", "#E5ECF5" }, { "#283E55", "#DCEBFC" },
             { "#2A3441", "#D6DFE9" }, { "#2C3745", "#DEE5ED" }, { "#2D3A4A", "#E7F0FC" },
             { "#304A64", "#D4E5FA" }, { "#35404E", "#C8D3E0" }, { "#365679", "#C4DDF8" },
@@ -42,7 +42,10 @@ namespace SquadTools
             { "#92A4B7", "#60758C" }, { "#94A7BB", "#5C7189" }, { "#263746", "#E2E8F0" },
             { "#2C3C4C", "#D8E1EB" }, { "#314638", "#DFEBD8" }, { "#91AC87", "#769264" },
             { "#778899", "#5E7188" }, { "#B0C4DE", "#436A9C" }, { "#FA8072", "#AB493D" },
-            { "#192A36", "#FFFFFF" }
+            { "#192A36", "#FCFAF6" }, { "#182630", "#F5F2EB" },
+            { "#E8101B24", "#E8FAF8F3" }, { "#E9101B24", "#E9FAF8F3" },
+            { "#C4D0D6", "#586973" }, { "#BECDD5", "#586973" },
+            { "#D9E8CF", "#4E6D3C" }, { "#D4F58C", "#6C8B37" }, { "#E9AF89", "#926139" }, { "#8196A5", "#60717B" }
         };
 
         public static bool IsLight { get; private set; }
