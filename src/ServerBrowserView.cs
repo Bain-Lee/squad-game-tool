@@ -44,7 +44,8 @@ namespace SquadTools
         internal ServerBrowserView(bool testing, EosClient eosClient, string favoritesFile, Func<DateTime> clock)
         {
             testMode = testing; client = eosClient; favoritePath = favoritesFile; utcNow = clock;
-            Child = (UIElement)XamlReader.Parse(Layout);
+            UiTheme.Attach(this);
+            Child = (UIElement)XamlReader.Parse(UiTheme.Xaml(Layout));
             var root = (FrameworkElement)Child;
             table = (DataGrid)root.FindName("Servers"); search = (TextBox)root.FindName("Search"); kind = (ComboBox)root.FindName("Kind");
             favoritesOnly = (CheckBox)root.FindName("FavoritesOnly"); populated = (CheckBox)root.FindName("Populated"); fold = (CheckBox)root.FindName("Fold"); hideMismatch = (CheckBox)root.FindName("HideMismatch"); autoCheck = (CheckBox)root.FindName("AutoCheck");

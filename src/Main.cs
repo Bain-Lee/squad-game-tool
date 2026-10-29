@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -19,7 +21,13 @@ namespace SquadTools
     {
         private TextBox weaponGrid, targetGrid, weaponHeight, targetHeight;
         private TextBlock bearing, elevation, elevationLabel, distance, difference, flight, status, mapName;
-        private TextBlock mapInfo, terrainNote, heightHint;
+        private TextBlock mapInfo, terrainNote;
+        private TextBox manualDifference;
+        private Slider opacitySlider;
+        private Popup opacityPopup;
+        private ToggleButton opacityToggle, themeToggle;
+        private double windowOpacity = 1;
+        private bool editingManualDifference;
         private ComboBox mapSelector, weaponCategory, weaponSelector, shellSelector;
         private TextBlock weaponInfo, serverMapNote;
         private Button stopServerFollow;
@@ -70,9 +78,11 @@ namespace SquadTools
             Title = "Squad Tools · 射击计算与服务器";
             Width = 1280; Height = 850; MinWidth = 1060; MinHeight = 740;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            Background = (Brush)new BrushConverter().ConvertFromString("#101720");
+            UiTheme.Attach(this); UiTheme.Apply(false);
+            Background = UiTheme.Brush("#101720");
+            Foreground = UiTheme.Brush("#E9EDF2");
             FontFamily = new FontFamily("Microsoft YaHei UI");
-            Content = XamlReader.Parse(Layout);
+            Content = XamlReader.Parse(UiTheme.Xaml(Layout));
             var root = (FrameworkElement)Content;
             weaponGrid = (TextBox)root.FindName("WeaponGrid"); targetGrid = (TextBox)root.FindName("TargetGrid");
             weaponHeight = (TextBox)root.FindName("WeaponHeight"); targetHeight = (TextBox)root.FindName("TargetHeight");
@@ -80,7 +90,9 @@ namespace SquadTools
             elevationLabel = (TextBlock)root.FindName("ElevationLabel");
             distance = (TextBlock)root.FindName("Distance"); difference = (TextBlock)root.FindName("Difference"); flight = (TextBlock)root.FindName("Flight");
             status = (TextBlock)root.FindName("Status"); mapName = (TextBlock)root.FindName("MapName");
-            mapInfo = (TextBlock)root.FindName("MapInfo"); terrainNote = (TextBlock)root.FindName("TerrainNote"); heightHint = (TextBlock)root.FindName("HeightHint");
+            mapInfo = (TextBlock)root.FindName("MapInfo"); terrainNote = (TextBlock)root.FindName("TerrainNote");
+            manualDifference = (TextBox)root.FindName("ManualDifference");
+            InitializeAppearance(root);
             mapSelector = (ComboBox)root.FindName("MapSelector");
             weaponCategory = (ComboBox)root.FindName("WeaponCategory"); weaponSelector = (ComboBox)root.FindName("WeaponSelector"); shellSelector = (ComboBox)root.FindName("ShellSelector");
             weaponInfo = (TextBlock)root.FindName("WeaponInfo"); serverMapNote = (TextBlock)root.FindName("ServerMapNote"); stopServerFollow = (Button)root.FindName("StopServerFollow");
@@ -114,6 +126,15 @@ namespace SquadTools
             weaponGrid.TextChanged += delegate { if (!loading) { preciseWeapon = null; Recalculate(); } };
             targetGrid.TextChanged += delegate { if (!loading) { preciseTarget = null; Recalculate(); } };
             foreach (var box in new[] { weaponHeight, targetHeight }) box.TextChanged += delegate { if (!loading) Recalculate(); };
+            manualDifference.TextChanged += delegate {
+                if (loading || terrain != null) return;
+                bool wasLoading = loading; loading = true;
+                try { weaponHeight.Text = "0"; targetHeight.Text = manualDifference.Text; }
+                finally { loading = wasLoading; }
+                editingManualDifference = true;
+                try { Recalculate(); }
+                finally { editingManualDifference = false; }
+            };
             foreach (MapDefinition definition in MapCatalog.Load(mapsDirectory)) mapChoices.Add(new MapChoice { Definition = definition });
             mapChoices.Add(new MapChoice());
             mapSelector.ItemsSource = mapChoices;
@@ -125,6 +146,48 @@ namespace SquadTools
             ApplySelectedMap(false);
             loading = false; Recalculate();
             if (!testMode) Closing += delegate { SaveSettings(); };
+        }
+
+        private void InitializeAppearance(FrameworkElement root)
+        {
+            opacitySlider = (Slider)root.FindName("OpacitySlider");
+            opacityPopup = (Popup)root.FindName("OpacityPopup");
+            opacityToggle = (ToggleButton)root.FindName("OpacityToggle");
+            themeToggle = (ToggleButton)root.FindName("ThemeToggle");
+            UiTheme.Attach((FrameworkElement)opacityPopup.Child);
+            opacitySlider.ValueChanged += delegate {
+                windowOpacity = opacitySlider.Value / 100;
+                ((TextBlock)root.FindName("OpacityValue")).Text = opacitySlider.Value.ToString("0", CultureInfo.InvariantCulture) + "%";
+                ApplyWindowOpacity();
+            };
+            SourceInitialized += delegate { ApplyWindowOpacity(); };
+            // Keep the toggle in charge of opening/closing. Automatic popup capture
+            // closes before a second toggle click and would immediately reopen it.
+            PreviewMouseDown += delegate(object sender, MouseButtonEventArgs e) {
+                var source = e.OriginalSource as DependencyObject;
+                if (opacityPopup.IsOpen && source != null && source != opacityToggle && !opacityToggle.IsAncestorOf(source)
+                    && source != opacityPopup.Child && !opacityPopup.Child.IsAncestorOf(source)) opacityToggle.IsChecked = false;
+            };
+            Deactivated += delegate { opacityToggle.IsChecked = false; };
+            KeyEventHandler dismiss = delegate(object sender, KeyEventArgs e) {
+                if (e.Key == Key.Escape && opacityPopup.IsOpen) { opacityToggle.IsChecked = false; opacityToggle.Focus(); e.Handled = true; }
+            };
+            PreviewKeyDown += dismiss;
+            opacityPopup.Child.PreviewKeyDown += dismiss;
+            themeToggle.Checked += delegate { ApplyTheme(true); };
+            themeToggle.Unchecked += delegate { ApplyTheme(false); };
+        }
+
+        private void ApplyWindowOpacity()
+        {
+            WindowOpacity.Apply(this, windowOpacity);
+            if (trajectoryWindow != null) WindowOpacity.Apply(trajectoryWindow, windowOpacity);
+        }
+
+        private void ApplyTheme(bool light)
+        {
+            UiTheme.Apply(light);
+            themeToggle.ToolTip = light ? "切换为深色主题" : "切换为浅色主题";
         }
 
         private void SelectServerPage(bool selected)
@@ -141,14 +204,12 @@ namespace SquadTools
             host.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
             ((UIElement)root.FindName("MortarHeading")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
             ((UIElement)root.FindName("MortarBody")).Visibility = selected ? Visibility.Collapsed : Visibility.Visible;
-            ((TextBlock)root.FindName("ModeBadge")).Text = selected ? "●  在线列表" : followedServerId == null ? "●  离线可用" : "●  地图跟随";
-            ((Button)root.FindName("ServerTab")).Background = new SolidColorBrush(selected ? Color.FromRgb(48,74,100) : Colors.Transparent);
-            ((Button)root.FindName("MortarTab")).Background = new SolidColorBrush(!selected && !raasMode ? Color.FromRgb(48,74,100) : Colors.Transparent);
-            ((Button)root.FindName("RaasTab")).Background = new SolidColorBrush(!selected && raasMode ? Color.FromRgb(48,74,100) : Colors.Transparent);
+            ((Button)root.FindName("ServerTab")).Background = selected ? UiTheme.Brush("#304A64") : Brushes.Transparent;
+            ((Button)root.FindName("MortarTab")).Background = !selected && !raasMode ? UiTheme.Brush("#304A64") : Brushes.Transparent;
+            ((Button)root.FindName("RaasTab")).Background = !selected && raasMode ? UiTheme.Brush("#304A64") : Brushes.Transparent;
             ((UIElement)root.FindName("FireControls")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             ((UIElement)root.FindName("RaasHost")).Visibility=raasMode?Visibility.Visible:Visibility.Collapsed;
             ((TextBlock)root.FindName("PageTitle")).Text=raasMode?"RAAS 猜点":"射击计算";
-            ((TextBlock)root.FindName("PageDescription")).Text=raasMode?"确认已知旗点，查看下一点。":"点选地图，或输入坐标。";
             ((RadioButton)root.FindName("PlaceTarget")).Visibility=((RadioButton)root.FindName("PlaceMortar")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             map.PredictionMode=raasMode;
             ((UIElement)root.FindName("ShootingDisplay")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
@@ -181,7 +242,7 @@ namespace SquadTools
                     };
                     raasView.LayerRequested+=delegate(string raw) { if(CanFollowRaas()) StopServerFollow(); currentLayerRawName=raw; };
                     raasView.SetMap(selectedMap==null?"custom":selectedMap.Id,null);
-                } catch(Exception ex) { if(!(ex is IOException) && !(ex is UnauthorizedAccessException) && !(ex is FormatException) && !(ex is ArgumentException)) throw; ((Border)((FrameworkElement)Content).FindName("RaasHost")).Child=new TextBlock { Text="RAAS 数据无法读取："+ex.Message,TextWrapping=TextWrapping.Wrap,Foreground=Brushes.Salmon }; return; }
+                } catch(Exception ex) { if(!(ex is IOException) && !(ex is UnauthorizedAccessException) && !(ex is FormatException) && !(ex is ArgumentException)) throw; ((Border)((FrameworkElement)Content).FindName("RaasHost")).Child=new TextBlock { Text="RAAS 数据无法读取："+ex.Message,TextWrapping=TextWrapping.Wrap,Foreground=UiTheme.Brush("#FFA88C") }; return; }
             }
         }
         private void UpdateRaasMap() { if(raasView!=null) raasView.SetMap(selectedMap==null?"custom":selectedMap.Id,currentLayerRawName); }
@@ -253,7 +314,7 @@ namespace SquadTools
             if(followedServerId==null) return;
             if(followedServer==null) {
                 serverMapNote.Text="未取得所跟随服务器的数据，保留当前地图。";
-                if(raasMode && raasView!=null) { raasView.UseManualMode(); raasView.ShowNotice("暂未取得服务器最新状态，猜点保持手动选择。"); ((TextBlock)((FrameworkElement)Content).FindName("ModeBadge")).Text="●  RAAS 手动"; }
+                if(raasMode && raasView!=null) { raasView.UseManualMode(); raasView.ShowNotice("暂未取得服务器最新状态，猜点保持手动选择。"); }
                 return;
             }
             var choice=ServerMapChoice(followedServer);
@@ -261,7 +322,6 @@ namespace SquadTools
                 string notice="服务器当前图层 "+followedServer.Map+" 不是可跟随的 RAAS 图层，猜点保持手动选择。";
                 if(raasView!=null) { raasView.UseManualMode(); raasView.ShowNotice(notice); }
                 serverMapNote.Text=notice;
-                ((TextBlock)((FrameworkElement)Content).FindName("ModeBadge")).Text="●  RAAS 手动";
                 return;
             }
             if(choice==null) { serverMapNote.Text="服务器地图暂不支持："+followedServer.Map+"，保留当前地图。"; return; }
@@ -278,7 +338,6 @@ namespace SquadTools
             serverMapNote.Text = "跟随 · " + server.Name;
             serverMapNote.ToolTip = server.Name + " · 每 60 秒同步地图";
             stopServerFollow.Visibility = Visibility.Visible;
-            ((TextBlock)((FrameworkElement)Content).FindName("ModeBadge")).Text="●  地图跟随";
             if(raasView!=null) raasView.ShowNotice(null);
         }
 
@@ -288,7 +347,6 @@ namespace SquadTools
             followedServerId = null; if (serverBrowser != null) serverBrowser.FollowServer(null);
             followedServer=null; if(raasView!=null) raasView.UseManualMode();
             serverMapNote.Text = "已停止跟随服务器，可手动选择地图。"; stopServerFollow.Visibility = Visibility.Collapsed;
-            ((TextBlock)((FrameworkElement)Content).FindName("ModeBadge")).Text = "●  离线可用";
         }
 
         public void ServerSmokeTest(string outputPath, ServerSnapshot sample)
@@ -337,7 +395,6 @@ namespace SquadTools
                     map.WorldSize = selectedMap.Width; map.WorldHeight = selectedMap.Height;
                     mapName.Text = selectedMap.Name;
                     mapInfo.Text = string.Format(CultureInfo.InvariantCulture, "{0:0.##} × {1:0.##} m · 已标定", selectedMap.Width, selectedMap.Height);
-                    if(selectedMap.HasTerrainHeight) mapInfo.Text+=string.Format(CultureInfo.InvariantCulture,"\n高程采用 SDK 世界 Z 基准，偏移 {0:0.####} m；可为负数，并非海拔。",selectedMap.HeightOffset);
                     try { map.MapImage = ReadImage(selectedMap.ImagePath); }
                     catch (Exception ex) { mapError = "地图图片无法读取：" + ex.Message; }
                     if (File.Exists(selectedMap.HeightmapPath))
@@ -368,8 +425,21 @@ namespace SquadTools
         {
             bool automatic = terrain != null;
             weaponHeight.IsReadOnly = automatic; targetHeight.IsReadOnly = automatic;
-            heightHint.Text = (automatic ? "自动 · SDK 基准可为负" : "本图无高程数据 · 手动填写") + " · 炮口高 " + selectedWeapon.MuzzleHeight.ToString("0.###", CultureInfo.InvariantCulture) + "m";
-            terrainNote.Text = automatic ? "自动读取地表的 SDK 世界 Z 高程，并非海拔；地图零点位于地面上方时可为负。两点高差参与解算，不含房顶、桥梁等建筑附加高度。" : "本图无高程数据，请按同一高度基准手动填写炮位和目标的地面高度。";
+            ((UIElement)((FrameworkElement)Content).FindName("ManualHeightInputs")).Visibility = automatic ? Visibility.Collapsed : Visibility.Visible;
+            terrainNote.Text = automatic ? "目标地面相对炮位地面的高差；正值表示目标更高。自动读取地形，不含建筑附加高度。" : "本图无地形数据，手动填写目标相对炮位的地面高差；正值表示目标更高，负值表示目标更低。";
+            if (!automatic) SyncManualDifference();
+        }
+
+        private void SyncManualDifference()
+        {
+            if (editingManualDifference) return;
+            double h1, h2;
+            if (!double.TryParse(weaponHeight.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out h1)
+                || !double.TryParse(targetHeight.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out h2)
+                || double.IsNaN(h1) || double.IsInfinity(h1) || double.IsNaN(h2) || double.IsInfinity(h2)) return;
+            bool wasLoading = loading; loading = true;
+            try { manualDifference.Text = (h2 - h1).ToString("0.##########", CultureInfo.InvariantCulture); }
+            finally { loading = wasLoading; }
         }
 
         private static double Number(string text, string label)
@@ -405,8 +475,9 @@ namespace SquadTools
                     try { weaponHeight.Text = terrain.Sample(mortar).ToString("F2", CultureInfo.InvariantCulture); targetHeight.Text = terrain.Sample(target).ToString("F2", CultureInfo.InvariantCulture); }
                     finally { loading = wasLoading; }
                 }
-                double h1 = Number(weaponHeight.Text, "炮位地面高度："), h2 = Number(targetHeight.Text, "目标地面高度：");
-                if (Math.Abs(h1) > 10000 || Math.Abs(h2) > 10000) throw new FormatException("高度绝对值应小于等于 10000 米。");
+                double h1 = Number(weaponHeight.Text, "地面高差："), h2 = Number(targetHeight.Text, "地面高差：");
+                if (Math.Abs(h1) > 10000 || Math.Abs(h2) > 10000) throw new FormatException("地面高差超出支持范围，请检查输入。");
+                if (!automatic) SyncManualDifference();
                 map.Weapon = mortar; map.Target = target; map.HasMarkers = true;
                 weaponGrid.ToolTip = PositionHint(mortar, preciseWeapon.HasValue);
                 targetGrid.ToolTip = PositionHint(target, preciseTarget.HasValue);
@@ -419,21 +490,20 @@ namespace SquadTools
                     elevation.Text = selectedWeapon.FormatElevation(SelectedMil);
                     flight.Text = SelectedTime.ToString("F1") + " s";
                     elevationLabel.Text = (SelectedHigh ? "高抛" : "低抛") + unitLabel;
-                    status.Text = (SelectedHigh ? "高抛解可用 · " : solution.HighUsable ? "低抛解可用 · " : "仅低抛解可用 · ") + (automatic ? "自动地形高差" : "手动地面高差");
-                    status.Foreground = new SolidColorBrush(Color.FromRgb(169,189,207));
+                    status.Text = "";
                 }
                 else
                 {
                     elevation.Text = "—"; flight.Text = "—";
                     status.Text = solution.HighUsable || solution.LowUsable ? "所选"+(ArcMode==ArcPreference.High?"高抛":"低抛")+"解不可用，请切换自动或另一弹道。" : solution.Message;
-                    status.Foreground = new SolidColorBrush(Color.FromRgb(255, 168, 140));
+                    status.Foreground = UiTheme.Brush("#FFA88C");
                 }
             }
             catch (Exception ex)
             {
                 if (!(ex is FormatException) && !(ex is ArgumentException)) throw;
                 bearing.Text = "—"; elevation.Text = "—"; distance.Text = "—"; difference.Text = "—"; flight.Text = "—";
-                status.Text = ex.Message; status.Foreground = new SolidColorBrush(Color.FromRgb(255, 168, 140));
+                status.Text = ex.Message; status.Foreground = UiTheme.Brush("#FFA88C");
                 map.HasMarkers = false;
                 if(terrain!=null) {
                     bool wasLoading=loading; loading=true;
@@ -442,6 +512,7 @@ namespace SquadTools
                 weaponGrid.ToolTip = "请输入有效网格坐标；在地图点击可精确定位。";
                 targetGrid.ToolTip = "请输入有效网格坐标；在地图点击可精确定位。";
             }
+            status.Visibility = string.IsNullOrEmpty(status.Text) ? Visibility.Collapsed : Visibility.Visible;
             UpdateShotAnalysis(); map.InvalidateVisual();
         }
 
@@ -488,6 +559,7 @@ namespace SquadTools
             if(!trajectoryButton.IsEnabled) return;
             if(trajectoryWindow==null) {
                 trajectoryWindow=new TrajectoryWindow { Owner=this, Width=Math.Min(940,Math.Max(640,ActualWidth-80)), Height=Math.Min(600,Math.Max(400,ActualHeight-100)) };
+                trajectoryWindow.SourceInitialized += delegate { ApplyWindowOpacity(); };
                 trajectoryWindow.Closed+=delegate { trajectoryWindow=null; };
             }
             UpdateTrajectory(); trajectoryWindow.Show(); trajectoryWindow.Activate();
@@ -521,20 +593,22 @@ namespace SquadTools
                 try { customMapSize = size.Value; mapSelector.SelectedItem = mapChoices[mapChoices.Count - 1]; }
                 finally { loading = wasLoading; }
                 ApplySelectedMap(true);
-                MessageBox.Show(this, "图片与尺寸标定已保存，可离线使用。\n\n图像左上角必须对应 A01 左上角。图片没有高程信息，两处地面高度仍需手动填写。", "地图已导入");
+                MessageBox.Show(this, "图片与尺寸标定已保存，可离线使用。\n\n图像左上角必须对应 A01 左上角。图片没有地形数据，请手动填写目标相对炮位的地面高差。", "地图已导入");
             }
             catch (Exception ex) { MessageBox.Show(this, "导入失败：" + ex.Message + "\n建议使用 PNG 或 JPEG 图片。", "地图导入"); }
         }
 
         private double? AskCustomMapSize()
         {
-            var dialog = new Window { Title = "标定自定义地图", Owner = this, Width = 420, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Background, Foreground = Brushes.White, FontFamily = FontFamily };
+            var dialog = new Window { Title = "标定自定义地图", Owner = this, Width = 420, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Background, Foreground = UiTheme.Brush("#E9EDF2"), FontFamily = FontFamily };
+            dialog.SourceInitialized += delegate { WindowOpacity.Apply(dialog, windowOpacity); };
+            UiTheme.Attach(dialog);
             var panel = new StackPanel { Margin = new Thickness(22) };
             panel.Children.Add(new TextBlock { Text = "地图实际边长（米）", FontSize = 16, Margin = new Thickness(0, 0, 0, 12) });
-            var input = new TextBox { Text = customMapSize.ToString("0.##", CultureInfo.InvariantCulture), FontSize = 16, Padding = new Thickness(8), Background = new SolidColorBrush(Color.FromRgb(25, 42, 54)), Foreground = Brushes.White, CaretBrush = Brushes.White };
+            var input = new TextBox { Text = customMapSize.ToString("0.##", CultureInfo.InvariantCulture), FontSize = 16, Padding = new Thickness(8), Background = UiTheme.Brush("#192A36"), Foreground = UiTheme.Brush("#E9EDF2"), CaretBrush = UiTheme.Brush("#ADCDF9") };
             panel.Children.Add(input);
-            panel.Children.Add(new TextBlock { Text = "用于将图片上的位置换算为游戏距离。请填写整张正方形地图的真实边长；内置地图无需设置。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new Thickness(0, 10, 0, 12) });
-            var error = new TextBlock { Foreground = Brushes.Salmon, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) }; panel.Children.Add(error);
+            panel.Children.Add(new TextBlock { Text = "用于将图片上的位置换算为游戏距离。请填写整张正方形地图的真实边长；内置地图无需设置。", TextWrapping = TextWrapping.Wrap, Foreground = UiTheme.Brush("#8196AD"), Margin = new Thickness(0, 10, 0, 12) });
+            var error = new TextBlock { Foreground = UiTheme.Brush("#FFA88C"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) }; panel.Children.Add(error);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var cancel = new Button { Content = "取消", IsCancel = true, Padding = new Thickness(16, 7, 16, 7), Margin = new Thickness(0, 0, 10, 0) };
             var accept = new Button { Content = "导入", IsDefault = true, Padding = new Thickness(16, 7, 16, 7) };
@@ -576,6 +650,16 @@ namespace SquadTools
                     var boxes = new[] { weaponGrid, targetGrid, weaponHeight, targetHeight };
                     var names = new[] { "weapon", "target", "weaponHeight", "targetHeight" };
                     for (int i = 0; i < names.Length; i++) { XmlNode node = document.SelectSingleNode("/settings/" + names[i]); if (node != null) boxes[i].Text = node.InnerText; }
+                    XmlNode differenceNode = document.SelectSingleNode("/settings/heightDifference");
+                    if (differenceNode != null) { weaponHeight.Text = "0"; targetHeight.Text = differenceNode.InnerText; }
+                    XmlNode opacityNode = document.SelectSingleNode("/settings/windowOpacity");
+                    double savedOpacity;
+                    if (opacityNode != null && double.TryParse(opacityNode.InnerText, NumberStyles.Float, CultureInfo.InvariantCulture, out savedOpacity)
+                        && !double.IsNaN(savedOpacity) && !double.IsInfinity(savedOpacity)) opacitySlider.Value = Math.Max(30, Math.Min(100, savedOpacity * 100));
+                    bool savedLight, savedPin;
+                    XmlNode themeNode = document.SelectSingleNode("/settings/lightTheme"), pinNode = document.SelectSingleNode("/settings/alwaysOnTop");
+                    if (themeNode != null && bool.TryParse(themeNode.InnerText, out savedLight)) themeToggle.IsChecked = savedLight;
+                    if (pinNode != null && bool.TryParse(pinNode.InnerText, out savedPin)) ((CheckBox)((FrameworkElement)Content).FindName("Pin")).IsChecked = savedPin;
                     XmlNode sizeNode = document.SelectSingleNode("/settings/mapSize");
                     double savedSize;
                     if (sizeNode != null && double.TryParse(sizeNode.InnerText, NumberStyles.Float, CultureInfo.InvariantCulture, out savedSize) && savedSize >= 300 && savedSize <= 7800) customMapSize = savedSize;
@@ -615,6 +699,11 @@ namespace SquadTools
                     writer.WriteElementString("arcPreference",arcSelector.SelectedIndex.ToString(CultureInfo.InvariantCulture));
                     writer.WriteElementString("showSpread",(spreadDisplay.IsChecked==true).ToString()); writer.WriteElementString("showDamage",(damageDisplay.IsChecked==true).ToString());
                     writer.WriteElementString("raasAutoComplete",(raasView==null?restoredRaasAuto:raasView.AutoComplete).ToString());
+                    // Preserve the signed difference when loading older two-height settings.
+                    writer.WriteElementString("heightDifference", terrain == null ? manualDifference.Text : solution == null ? "0" : solution.HeightDifference.ToString("R", CultureInfo.InvariantCulture));
+                    writer.WriteElementString("windowOpacity", windowOpacity.ToString("R", CultureInfo.InvariantCulture));
+                    writer.WriteElementString("lightTheme", (themeToggle.IsChecked == true).ToString());
+                    writer.WriteElementString("alwaysOnTop", Topmost.ToString());
                     WritePrecisePoint(writer, "weapon", preciseWeapon);
                     WritePrecisePoint(writer, "target", preciseTarget);
                     writer.WriteEndElement();
@@ -651,9 +740,10 @@ namespace SquadTools
                 "1. 在左侧选择游戏地图。地图图片和尺寸已本地保存；切换后使用该地图的实际宽高。也可选择自定义图片 / 空白网格。\n\n" +
                 "2. 填写游戏网格坐标，如 D05-5-5。每个大格 300 米，九宫格顺序与数字小键盘一致。按最细小格中心计算。\n\n" +
                 "地图左键放目标，双击右键放炮位；按住右键移动鼠标可拖动地图，滚轮缩放，也支持中键拖动。右键单击不放置标记，双击的第二次松开时设置炮位；拖动不会设置炮位。地图点击保留实际位置，不吸附到网格中心；框内网格仅作参考，悬停可查看实际米制坐标。\n\n" +
-                "3. 炮位和目标高程始终显示；有本地高程数据时自动读取并随坐标更新，无需开关。自定义图片、旧版 Belaya 等无高程数据的地图可手动填写。地形数据不含桥梁、房顶等附加高度；目标更高时高差为正。炮口高度按所选武器计算。\n\n" +
+                "3. 只显示目标相对炮位的地面高差；有地形数据时自动随坐标更新。自定义图片、旧版 Belaya 等无地形数据的地图可手动填写高差：目标更高填正数，更低填负数。地形数据不含桥梁、房顶等附加高度，炮口高度按所选武器计算。弹道剖面也以炮位地面为零点。\n\n" +
                 "4. 左上角选择工事或载具、具体武器及弹药。程序使用各自初速、重力和仰角限制，按武器显示密位、度数或度分。方位 0° 为北、90° 为东；NATO 密位采用 6400/圈。飞行时间为理论估算。\n\n" +
                 "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
+                "6. 右上角依次是透明度、置顶、浅色 / 深色主题、帮助。点击透明度图标可展开滑动条，拖动时实时预览；不透明度最低为 30%。透明度、置顶与主题会保存，重启后恢复。\n\n" +
                 "贝拉亚为暂退役的旧版地图，仅提供底图和手动高差。本版不判断地形遮挡，不含 OCR 或游戏读取，命中精度尚未经游戏实测。\n\n" +
                 "服务器列表：点选仅查看详情。点击“启用地图跟随”后仍停留在列表，手动进入射击计算或 RAAS 猜点才同步，并每 60 秒跟随换图。非 RAAS 或未收录图层时，猜点保留手动地图和确认链。可在列表或射击页停止跟随。上报人数、EOS 登记与可见成员口径不同；持续差异提示不等于已证实阴兵。\n\n" +
                 "RAAS 猜点：顶部选择该页，指定地图、具体 RAAS 图层和己方基地，依次确认旗点。基地显示对应国旗或阵营代号；跟随时用服务器当前阵营，手动模式用图层默认阵营，缺失则显示未知。支持上一步与重置，数据内置且可离线计算。概率为路线模型估计，游戏更新后可能需要更新数据。\n\n" +
@@ -779,6 +869,35 @@ namespace SquadTools
       <Setter Property='Background' Value='#26313F'/><Setter Property='Foreground' Value='#E9EDF2'/><Setter Property='BorderThickness' Value='0'/><Setter Property='Padding' Value='13,8'/><Setter Property='Cursor' Value='Hand'/><Setter Property='FontSize' Value='12'/>
       <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'><Border x:Name='Surface' Background='{TemplateBinding Background}' BorderBrush='Transparent' BorderThickness='1' CornerRadius='8' Padding='{TemplateBinding Padding}'><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='Surface' Property='Opacity' Value='0.82'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='Surface' Property='Opacity' Value='0.65'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='Surface' Property='BorderBrush' Value='#ADCDF9'/></Trigger><Trigger Property='IsEnabled' Value='False'><Setter TargetName='Surface' Property='Opacity' Value='0.4'/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
     </Style>
+    <Style x:Key='HeaderToggle' TargetType='ToggleButton'>
+      <Setter Property='Width' Value='36'/><Setter Property='Height' Value='36'/><Setter Property='Margin' Value='4,0,0,0'/><Setter Property='Background' Value='Transparent'/><Setter Property='Foreground' Value='#A6B2C1'/><Setter Property='Cursor' Value='Hand'/><Setter Property='VerticalAlignment' Value='Top'/><Setter Property='ToolTipService.InitialShowDelay' Value='300'/>
+      <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='ToggleButton'>
+        <Border x:Name='Surface' Background='{TemplateBinding Background}' BorderBrush='Transparent' BorderThickness='1' CornerRadius='9'><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property='IsMouseOver' Value='True'><Setter TargetName='Surface' Property='Background' Value='#26313F'/><Setter Property='Foreground' Value='#E9EDF2'/></Trigger>
+          <Trigger Property='IsChecked' Value='True'><Setter TargetName='Surface' Property='Background' Value='#304A64'/><Setter Property='Foreground' Value='#ADCDF9'/></Trigger>
+          <Trigger Property='IsPressed' Value='True'><Setter TargetName='Surface' Property='Opacity' Value='0.7'/></Trigger>
+          <Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='Surface' Property='BorderBrush' Value='#8BB8F4'/></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key='HeaderButton' TargetType='Button' BasedOn='{StaticResource {x:Type Button}}'>
+      <Setter Property='Width' Value='36'/><Setter Property='Height' Value='36'/><Setter Property='Padding' Value='0'/><Setter Property='Margin' Value='4,0,0,0'/><Setter Property='Background' Value='Transparent'/><Setter Property='Foreground' Value='#A6B2C1'/><Setter Property='VerticalAlignment' Value='Top'/><Setter Property='ToolTipService.InitialShowDelay' Value='300'/>
+      <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>
+        <Border x:Name='Surface' Background='{TemplateBinding Background}' BorderBrush='Transparent' BorderThickness='1' CornerRadius='9'><ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border>
+        <ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'><Setter TargetName='Surface' Property='Background' Value='#26313F'/><Setter Property='Foreground' Value='#E9EDF2'/></Trigger><Trigger Property='IsPressed' Value='True'><Setter TargetName='Surface' Property='Opacity' Value='0.7'/></Trigger><Trigger Property='IsKeyboardFocused' Value='True'><Setter TargetName='Surface' Property='BorderBrush' Value='#8BB8F4'/></Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key='OpacitySliderStyle' TargetType='Slider'>
+      <Setter Property='IsMoveToPointEnabled' Value='True'/><Setter Property='Height' Value='28'/>
+      <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Slider'>
+        <Grid VerticalAlignment='Center'><Track x:Name='PART_Track' Minimum='{TemplateBinding Minimum}' Maximum='{TemplateBinding Maximum}' Value='{TemplateBinding Value}' Orientation='Horizontal'>
+          <Track.DecreaseRepeatButton><RepeatButton Command='{x:Static Slider.DecreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Height='4' CornerRadius='2' Background='#8BB8F4'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+          <Track.Thumb><Thumb Width='16' Height='16' Cursor='Hand'><Thumb.Template><ControlTemplate TargetType='Thumb'><Border Background='#ADCDF9' BorderBrush='#E9EDF2' BorderThickness='2' CornerRadius='8'/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+          <Track.IncreaseRepeatButton><RepeatButton Command='{x:Static Slider.IncreaseLarge}' Focusable='False'><RepeatButton.Template><ControlTemplate TargetType='RepeatButton'><Border Height='4' CornerRadius='2' Background='#35404E'/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
+        </Track></Grid>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
     <Style TargetType='CheckBox'><Setter Property='Foreground' Value='#A6B2C1'/><Setter Property='FontSize' Value='12'/><Setter Property='VerticalAlignment' Value='Center'/></Style>
     <Style TargetType='RadioButton'><Setter Property='Foreground' Value='#BAC4D0'/><Setter Property='Margin' Value='0,0,12,0'/><Setter Property='FontSize' Value='11'/><Setter Property='VerticalAlignment' Value='Center'/></Style>
     <Style TargetType='Expander'><Setter Property='Foreground' Value='#A6B2C1'/><Setter Property='FontSize' Value='11'/></Style>
@@ -810,12 +929,29 @@ namespace SquadTools
       <Style.Triggers><Trigger Property='Orientation' Value='Horizontal'><Setter Property='Width' Value='Auto'/><Setter Property='Height' Value='6'/></Trigger></Style.Triggers>
     </Style>
   </Grid.Resources>
-  <Grid.RowDefinitions><RowDefinition Height='50'/><RowDefinition Height='68'/><RowDefinition Height='*'/><RowDefinition Height='26'/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height='50'/><RowDefinition Height='54'/><RowDefinition Height='*'/><RowDefinition Height='26'/></Grid.RowDefinitions>
   <DockPanel LastChildFill='False'>
     <StackPanel DockPanel.Dock='Left' Orientation='Horizontal'><TextBlock Text='SQUAD TOOLS' FontWeight='SemiBold' FontSize='15' Margin='0,9,24,0'/><Border Background='#1B2531' CornerRadius='11' Padding='3' VerticalAlignment='Top'><StackPanel Orientation='Horizontal'><Button x:Name='MortarTab' Content='射击计算' Background='#304A64' Padding='16,7'/><Button x:Name='RaasTab' Content='RAAS 猜点' Background='Transparent' Padding='16,7'/><Button x:Name='ServerTab' Content='服务器' Background='Transparent' Padding='16,7'/></StackPanel></Border></StackPanel>
-    <StackPanel DockPanel.Dock='Right' Orientation='Horizontal'><TextBlock x:Name='ModeBadge' Text='离线可用' Foreground='#9FAEC0' FontSize='11' Margin='0,11,18,0'/><CheckBox x:Name='Pin' Content='置顶' Foreground='#A6B2C1' VerticalAlignment='Top' Margin='0,9,16,0'/><Button x:Name='Help' Content='帮助' Background='Transparent' Padding='10,8' VerticalAlignment='Top'/></StackPanel>
+    <StackPanel x:Name='HeaderActions' DockPanel.Dock='Right' Orientation='Horizontal'>
+      <ToggleButton x:Name='OpacityToggle' Style='{StaticResource HeaderToggle}' ToolTip='窗口透明度' AutomationProperties.Name='窗口透明度'>
+        <Grid Width='20' Height='20'><Rectangle Width='12' Height='12' HorizontalAlignment='Left' VerticalAlignment='Top' RadiusX='2' RadiusY='2' Fill='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' Opacity='0.35'/><Rectangle Width='13' Height='13' HorizontalAlignment='Right' VerticalAlignment='Bottom' RadiusX='2' RadiusY='2' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' StrokeThickness='1.6'/></Grid>
+      </ToggleButton>
+      <CheckBox x:Name='Pin' ToolTip='窗口置顶' AutomationProperties.Name='窗口置顶'><CheckBox.Style><Style TargetType='CheckBox' BasedOn='{StaticResource HeaderToggle}'/></CheckBox.Style><Path Width='18' Height='18' Stretch='Uniform' Data='M 7,2 L 15,2 M 9,2 L 9,8 6,12 6,13 16,13 16,12 13,8 13,2 M 11,13 L 11,20' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=CheckBox}}' StrokeThickness='1.6' StrokeStartLineCap='Round' StrokeEndLineCap='Round' StrokeLineJoin='Round'/></CheckBox>
+      <ToggleButton x:Name='ThemeToggle' Style='{StaticResource HeaderToggle}' ToolTip='切换为浅色主题' AutomationProperties.Name='浅色与深色主题切换'>
+        <Grid Width='20' Height='20'>
+          <Path Data='M 10,1 L 10,3 M 10,17 L 10,19 M 1,10 L 3,10 M 17,10 L 19,10 M 3.6,3.6 L 5,5 M 15,15 L 16.4,16.4 M 3.6,16.4 L 5,15 M 15,5 L 16.4,3.6 M 14,10 A 4,4 0 1 1 6,10 A 4,4 0 1 1 14,10' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' StrokeThickness='1.5' StrokeStartLineCap='Round' StrokeEndLineCap='Round'><Path.Style><Style TargetType='Path'><Style.Triggers><DataTrigger Binding='{Binding IsChecked, ElementName=ThemeToggle}' Value='True'><Setter Property='Visibility' Value='Collapsed'/></DataTrigger></Style.Triggers></Style></Path.Style></Path>
+          <Path Data='M 17.5,12 A 8,8 0 1 1 8,2.5 A 6.5,6.5 0 0 0 17.5,12 Z' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' StrokeThickness='1.5' StrokeLineJoin='Round'><Path.Style><Style TargetType='Path'><Setter Property='Visibility' Value='Collapsed'/><Style.Triggers><DataTrigger Binding='{Binding IsChecked, ElementName=ThemeToggle}' Value='True'><Setter Property='Visibility' Value='Visible'/></DataTrigger></Style.Triggers></Style></Path.Style></Path>
+        </Grid>
+      </ToggleButton>
+      <Button x:Name='Help' Style='{StaticResource HeaderButton}' ToolTip='使用帮助' AutomationProperties.Name='使用帮助'><Path Width='20' Height='20' Stretch='Uniform' Data='M 19,10 A 9,9 0 1 1 1,10 A 9,9 0 1 1 19,10 M 7.5,7 A 2.5,2.5 0 1 1 11,9.3 Q 10,10 10,11.5 M 10,14.5 L 10,14.8' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}' StrokeThickness='1.5' StrokeStartLineCap='Round' StrokeEndLineCap='Round'/></Button>
+    </StackPanel>
   </DockPanel>
-  <StackPanel x:Name='MortarHeading' Grid.Row='1'><TextBlock x:Name='PageTitle' Text='射击计算' FontSize='25' FontWeight='SemiBold'/><TextBlock x:Name='PageDescription' Text='点选地图，或输入坐标。' Foreground='#8F9EAF' Margin='0,6,0,0' FontSize='12'/></StackPanel>
+  <Popup x:Name='OpacityPopup' IsOpen='{Binding IsChecked, ElementName=OpacityToggle, Mode=TwoWay}' PlacementTarget='{Binding ElementName=OpacityToggle}' Placement='Bottom' HorizontalOffset='-176' VerticalOffset='8' StaysOpen='True' AllowsTransparency='True' PopupAnimation='Fade'>
+    <Border Background='#242D39' BorderBrush='#394454' BorderThickness='1' CornerRadius='12' Padding='16,12' Width='220'>
+      <StackPanel><DockPanel Margin='0,0,0,6'><TextBlock x:Name='OpacityValue' DockPanel.Dock='Right' Text='100%' Foreground='#ADCDF9' FontSize='12' FontWeight='SemiBold'/><TextBlock Text='窗口不透明度' FontSize='12'/></DockPanel><Slider x:Name='OpacitySlider' Style='{StaticResource OpacitySliderStyle}' Minimum='30' Maximum='100' Value='100' SmallChange='1' LargeChange='10' TickFrequency='1' IsSnapToTickEnabled='True' AutomationProperties.Name='窗口不透明度百分比'/></StackPanel>
+    </Border>
+  </Popup>
+  <StackPanel x:Name='MortarHeading' Grid.Row='1'><TextBlock x:Name='PageTitle' Text='射击计算' FontSize='25' FontWeight='SemiBold'/></StackPanel>
   <Grid x:Name='MortarBody' Grid.Row='2'>
     <Grid.ColumnDefinitions><ColumnDefinition Width='318'/><ColumnDefinition Width='18'/><ColumnDefinition Width='*'/></Grid.ColumnDefinitions>
     <Border x:Name='Sidebar' Background='#171F29' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13' Padding='18'>
@@ -833,11 +969,8 @@ namespace SquadTools
             <StackPanel><TextBlock Text='炮位' Foreground='#ADCDF9' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='WeaponGrid' Text='D05-5-5' ToolTip='在地图双击右键，或输入网格坐标。'/></StackPanel>
             <StackPanel Grid.Column='2'><TextBlock Text='目标' Foreground='#E4B6A4' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='TargetGrid' Text='F06-5-5' ToolTip='在地图左键点选，或输入网格坐标。'/></StackPanel>
           </Grid>
-          <Grid x:Name='HeightInputs' Margin='0,16,0,0' ToolTip='{Binding Text, ElementName=TerrainNote}'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition/></Grid.ColumnDefinitions>
-            <StackPanel><TextBlock Text='炮位高程 · m' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/><TextBox x:Name='WeaponHeight' Text='0'/></StackPanel>
-            <StackPanel Grid.Column='2'><TextBlock Text='目标高程 · m' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/><TextBox x:Name='TargetHeight' Text='0'/></StackPanel>
-          </Grid>
-          <TextBlock x:Name='HeightHint' Foreground='#8196AD' FontSize='10' Margin='0,8,0,12' TextWrapping='Wrap'/>
+          <Grid x:Name='HeightInputs' Visibility='Collapsed'><TextBox x:Name='WeaponHeight' Text='0'/><TextBox x:Name='TargetHeight' Text='0'/></Grid>
+          <StackPanel x:Name='ManualHeightInputs' Visibility='Collapsed' Margin='0,16,0,0'><TextBlock Text='地面高差 · m' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/><TextBox x:Name='ManualDifference' Text='0' ToolTip='目标地面相对炮位地面的高差。目标更高填正数，更低填负数；等高填 0。' AutomationProperties.Name='手动地面高差，米'/></StackPanel>
         </StackPanel>
       </ScrollViewer>
       <StackPanel x:Name='ResultPanel' Grid.Row='1' Margin='0,10,0,0'>
@@ -847,8 +980,8 @@ namespace SquadTools
           <StackPanel><TextBlock Text='方位角' FontSize='11' Foreground='#96A5B6'/><TextBlock x:Name='Bearing' Text='—' FontSize='30' FontWeight='Medium' Margin='0,7,0,0'/></StackPanel>
           <StackPanel Grid.Column='1'><TextBlock x:Name='ElevationLabel' Text='高抛密位 / MIL' FontSize='11' Foreground='#96A5B6'/><TextBlock x:Name='Elevation' Text='—' Foreground='#ADCDF9' FontSize='33' FontWeight='Medium' Margin='0,4,0,0'/></StackPanel>
         </Grid>
-        <TextBlock x:Name='Status' TextWrapping='Wrap' FontSize='11' Margin='0,10,0,18' Foreground='#A9BDCF'/>
-        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+        <TextBlock x:Name='Status' Visibility='Collapsed' TextWrapping='Wrap' FontSize='11' Margin='0,10,0,12' Foreground='#FFA88C'/>
+        <Grid Margin='0,16,0,0'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
           <StackPanel><TextBlock Text='距离' FontSize='10' Foreground='#96A5B6'/><TextBlock x:Name='Distance' Text='—' FontSize='13' Margin='0,7,0,0'/></StackPanel>
           <StackPanel Grid.Column='1' ToolTip='{Binding Text, ElementName=TerrainNote}'><TextBlock Text='高差' FontSize='10' Foreground='#96A5B6'/><TextBlock x:Name='Difference' Text='—' FontSize='13' Margin='0,7,0,0'/></StackPanel>
           <StackPanel Grid.Column='2'><TextBlock Text='飞行时间' FontSize='10' Foreground='#96A5B6'/><TextBlock x:Name='Flight' Text='—' FontSize='13' Margin='0,7,0,0'/></StackPanel>
@@ -869,7 +1002,7 @@ namespace SquadTools
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-   <TextBlock Grid.Row='3' Text='Squad Tools · 0.7.1 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
+   <TextBlock Grid.Row='3' Text='Squad Tools · 0.8.0 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 

@@ -32,7 +32,7 @@ internal static class ReviewTests
     {
         try {
             TestPreviewScroll(args[0],args[1]); TestHeightDatum(args[0]);
-            Console.WriteLine("PASS: "+assertions+" CR assertions: preview scroll/selection retention, signed SDK height datum, datum-invariant firing solutions and terrain profiles, explicit UI height reference. No network or user settings."); return 0;
+            Console.WriteLine("PASS: "+assertions+" CR assertions: preview scroll/selection retention, signed SDK height datum, datum-invariant firing solutions and terrain profiles, height-difference-only display. No network or user settings."); return 0;
         } catch(Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static void TestPreviewScroll(string maps,string layers)
@@ -94,9 +94,10 @@ internal static class ReviewTests
         try {
             var picker=Field<ComboBox>(window,"mapSelector"); picker.SelectedItem=picker.Items.Cast<object>().Single(item=>item.ToString()==mestia.DisplayName);
             Call(window,"PlacePoint",first,true); Call(window,"PlacePoint",last,false);
-            Near(h1,double.Parse(Field<TextBox>(window,"weaponHeight").Text,CultureInfo.InvariantCulture),0.00501,"signed height is displayed without abs or zero clamping");
-            Check(Field<TextBlock>(window,"heightHint").Text.Contains("SDK") && Field<TextBlock>(window,"terrainNote").Text.Contains("海拔"),"automatic height explanation names its SDK datum and distinguishes sea-level altitude");
-            Check(Field<TextBox>(window,"weaponHeight").IsReadOnly,"datum explanation preserves automatic terrain sampling");
+            Near(h1,double.Parse(Field<TextBox>(window,"weaponHeight").Text,CultureInfo.InvariantCulture),0.00501,"signed height is retained internally without abs or zero clamping");
+            Check(!Field<TextBox>(window,"weaponHeight").IsVisible && !Field<TextBox>(window,"targetHeight").IsVisible,"absolute SDK heights do not appear in the shooting UI");
+            Near(h2-h1,Field<FiringSolution>(window,"solution").HeightDifference,0.01001,"visible height difference retains the signed target-minus-weapon relationship");
+            Check(Field<TextBox>(window,"weaponHeight").IsReadOnly,"height-difference display preserves automatic terrain sampling");
         } finally {window.Close();}
     }
 }

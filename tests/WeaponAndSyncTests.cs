@@ -95,7 +95,7 @@ internal static class WeaponAndSyncTests
             Check(Field<WeaponDefinition>(window,"selectedWeapon").Id == "tech-mortar", "category changes active weapon");
             Call(window,"SelectWeapon","m1064","nearSurface");
             Check(Field<ShellDefinition>(window,"selectedShell").Id == "nearSurface" && Field<ComboBox>(window,"shellSelector").IsEnabled, "ammunition selection restores by id");
-            Check(Field<TextBlock>(window,"heightHint").Text.Contains("3m"), "height hint reflects weapon muzzle offset");
+            Check(Field<WeaponDefinition>(window,"selectedWeapon").MuzzleHeight==3 && !Field<TextBox>(window,"weaponHeight").IsVisible, "weapon muzzle offset remains active while absolute terrain heights stay hidden");
             Call(window,"SelectWeapon","missing","missing");
             Check(Field<WeaponDefinition>(window,"selectedWeapon").Id == "mortar" && !Field<ComboBox>(window,"shellSelector").IsEnabled, "old or invalid settings fall back safely");
             Call(window,"SelectServerPage",true);

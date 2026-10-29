@@ -58,15 +58,17 @@ internal static class LayoutTests
                 picker.SelectedItem=manual?manualMap:automaticMap; Call(window,"SelectWeapon",weapon.Id,weapon.Shells[0].Id); Pump(window);
                 var mapCard=(Border)root.FindName("MapCard");
                 Check(Math.Abs(sidebar.ActualHeight-mapCard.ActualHeight)<1 && Math.Abs(Bounds(sidebar,root).Top-Bounds(mapCard,root).Top)<1,"shooting sidebar and entire map card have matching height and top edge");
-                Check(((Grid)root.FindName("HeightInputs")).IsVisible,"elevation fields remain visible for every weapon and map type");
+                Check(!Field<TextBox>(window,"weaponHeight").IsVisible && !Field<TextBox>(window,"targetHeight").IsVisible,"absolute elevations remain internal for every weapon and map type");
+                Check(((FrameworkElement)root.FindName("ManualHeightInputs")).IsVisible==manual,"only maps without terrain offer manual height difference");
                 Check(Field<TextBox>(window,"weaponHeight").IsReadOnly!=manual && Field<TextBox>(window,"targetHeight").IsReadOnly!=manual,"available terrain is always automatic; missing terrain permits manual entry");
                 if(!manual) {
                     var terrain=Field<TerrainHeightMap>(window,"terrain"); var map=Field<MapView>(window,"map");
                     double shown=double.Parse(Field<TextBox>(window,"weaponHeight").Text,System.Globalization.CultureInfo.InvariantCulture);
-                    Check(Math.Abs(shown-terrain.Sample(map.Weapon))<0.005001,"visible elevation samples the actual weapon position");
+                    Check(Math.Abs(shown-terrain.Sample(map.Weapon))<0.005001,"internal elevation samples the actual weapon position");
                 }
                 Inside(results,sidebar,"results always fit sidebar: "+weapon.Id+" / "+size+" / "+manual);
-                foreach(string id in new[]{"Bearing","Elevation","Status","Distance","Difference","Flight"}) Inside((FrameworkElement)root.FindName(id),results,"readout remains visible: "+id);
+                foreach(string id in new[]{"Bearing","Elevation","Distance","Difference","Flight"}) Inside((FrameworkElement)root.FindName(id),results,"readout remains visible: "+id);
+                if(((FrameworkElement)root.FindName("Status")).IsVisible) Inside((FrameworkElement)root.FindName("Status"),results,"important calculation error stays visible");
                 Check(Bounds((FrameworkElement)root.FindName("Bearing"),results).Right<=Bounds((FrameworkElement)root.FindName("Elevation"),results).Left+1,"bearing and elevation do not overlap");
                 Check(scroll.ComputedHorizontalScrollBarVisibility==Visibility.Collapsed,"shooting inputs do not require horizontal scrolling");
                 if(size.Height>=850) Check(scroll.ScrollableHeight<1,"normal-size input panel fits without scrolling: "+weapon.Id+" / "+manual+" / "+scroll.ScrollableHeight);
@@ -75,20 +77,23 @@ internal static class LayoutTests
                     Check(gap>=-1 && gap<=24,"results follow inputs without a stretched blank band: "+weapon.Id+" / "+size+" / "+manual+" / "+gap);
                 }
                 if(manual) {
-                    scroll.ScrollToEnd(); Pump(window); Inside(Field<TextBox>(window,"weaponHeight"),scroll,"manual weapon height is reachable"); Inside(Field<TextBox>(window,"targetHeight"),scroll,"manual target height is reachable");
+                    scroll.ScrollToEnd(); Pump(window); Inside((TextBox)root.FindName("ManualDifference"),scroll,"manual height difference is reachable");
                 }
             }
             picker.SelectedItem=automaticMap; Field<TextBox>(window,"weaponGrid").Text="invalid"; Pump(window); Inside((FrameworkElement)root.FindName("Status"),results,"invalid-input message fits fixed results");
             Check(string.IsNullOrEmpty(Field<TextBox>(window,"weaponHeight").Text) && string.IsNullOrEmpty(Field<TextBox>(window,"targetHeight").Text),"invalid coordinates clear stale automatic elevations");
-            Field<TextBox>(window,"weaponGrid").Text="D05-5-5"; Check(!string.IsNullOrEmpty(Field<TextBox>(window,"weaponHeight").Text),"valid coordinates recover automatic elevation display");
+            Field<TextBox>(window,"weaponGrid").Text="D05-5-5"; Check(!string.IsNullOrEmpty(Field<TextBox>(window,"weaponHeight").Text),"valid coordinates recover internal automatic elevation");
         }
         window.Width=1060; window.Height=740; picker.SelectedItem=manualMap; Call(window,"SelectWeapon","m1064","impact"); Pump(window);
-        Check(scroll.ScrollableHeight>1,"minimum-size multi-ammunition/manual configuration exercises scrolling");
+        // Force a short viewport to exercise paging even after the compact height UI removes normal overflow.
+        double oldHeight=scroll.Height; scroll.Height=120; Pump(window);
+        Check(scroll.ScrollableHeight>1,"short input viewport exercises scrolling");
         var bar=(ScrollBar)scroll.Template.FindName("PART_VerticalScrollBar",scroll);
         Check(bar.ActualWidth<=8 && bar.ActualWidth>0,"vertical scrollbar uses at most eight pixels; actual="+bar.ActualWidth);
         scroll.ScrollToTop(); Pump(window); ScrollBar.PageDownCommand.Execute(null,bar); Pump(window);
         Check(scroll.VerticalOffset>0,"custom scrollbar still handles page-down commands"); scroll.ScrollToEnd(); Pump(window);
-        Inside(Field<TextBox>(window,"targetHeight"),scroll,"end of manual inputs is reachable after paging");
+        Inside((TextBox)root.FindName("ManualDifference"),scroll,"manual height difference is reachable after paging");
+        scroll.Height=oldHeight; Pump(window);
         var horizontal=new ScrollViewer{Width=220,Height=80,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled,Content=new Border{Width=1000,Height=30}};
         var rootGrid=(Grid)root; Grid.SetRow(horizontal,2); rootGrid.Children.Add(horizontal);
         try {

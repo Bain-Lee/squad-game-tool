@@ -36,25 +36,26 @@ namespace SquadTools
         public event Action<IList<RaasMarker>> MarkersChanged;
         public RaasView(RaasRepository data)
         {
+            UiTheme.Attach(this);
             repository=data;
             var grid=new Grid(); grid.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto }); grid.RowDefinitions.Add(new RowDefinition { Height=new GridLength(1,GridUnitType.Star) }); grid.RowDefinitions.Add(new RowDefinition { Height=GridLength.Auto });
             var top=new StackPanel();
             top.Children.Add(Title("地图",11)); top.Children.Add(mapPicker);
             top.Children.Add(Title("图层",11)); top.Children.Add(layerPicker);
             top.Children.Add(Title("己方基地",11)); top.Children.Add(mainPicker);
-            allPoints.Foreground=new SolidColorBrush(Color.FromRgb(166,178,193)); allPoints.FontSize=11; allPoints.Margin=new Thickness(0,0,12,0); allPoints.Content="显示后续候选";
+            allPoints.Foreground=UiTheme.Brush("#A6B2C1"); allPoints.FontSize=11; allPoints.Margin=new Thickness(0,0,12,0); allPoints.Content="显示后续候选";
             autoComplete.Foreground=allPoints.Foreground; autoComplete.FontSize=11;
             autoComplete.ToolTip="自动推导唯一候选，并标注为自动；上一步撤销本次选择及连带补齐，撤销后不会立即补回。";
             var options=new WrapPanel { Margin=new Thickness(0,12,0,12) }; options.Children.Add(allPoints); options.Children.Add(autoComplete); top.Children.Add(options);
-            progress.Foreground=new SolidColorBrush(Color.FromRgb(173,205,249)); progress.FontSize=12; progress.TextWrapping=TextWrapping.Wrap; progress.Margin=new Thickness(0,0,0,10); top.Children.Add(progress); grid.Children.Add(top);
-            candidates.Background=new SolidColorBrush(Color.FromRgb(17,24,32)); candidates.Foreground=Brushes.White; candidates.BorderBrush=Brushes.Transparent; candidates.FontSize=12;
+            progress.Foreground=UiTheme.Brush("#ADCDF9"); progress.FontSize=12; progress.TextWrapping=TextWrapping.Wrap; progress.Margin=new Thickness(0,0,0,10); top.Children.Add(progress); grid.Children.Add(top);
+            candidates.Background=UiTheme.Brush("#111820"); candidates.Foreground=UiTheme.Brush("#E9EDF2"); candidates.BorderBrush=Brushes.Transparent; candidates.FontSize=12;
             candidates.Margin=new Thickness(0,0,0,10); Grid.SetRow(candidates,1); grid.Children.Add(candidates);
             var bottom=new StackPanel(); bottom.Children.Add(confirm);
             var actions=new Grid { Margin=new Thickness(0,8,0,8) }; actions.ColumnDefinitions.Add(new ColumnDefinition()); actions.ColumnDefinitions.Add(new ColumnDefinition());
             undo.Margin=new Thickness(0,0,5,0); reset.Margin=new Thickness(5,0,0,0); Grid.SetColumn(reset,1); actions.Children.Add(undo); actions.Children.Add(reset); bottom.Children.Add(actions);
-            chain.FontSize=11; chain.Foreground=new SolidColorBrush(Color.FromRgb(166,178,193)); chain.MaxHeight=16; chain.TextTrimming=TextTrimming.CharacterEllipsis; bottom.Children.Add(chain);
-            message.FontSize=10; message.Foreground=Brushes.LightSlateGray; message.TextWrapping=TextWrapping.Wrap; message.MaxHeight=30; message.TextTrimming=TextTrimming.CharacterEllipsis; message.Margin=new Thickness(0,8,0,0); bottom.Children.Add(message);
-            bottom.Children.Add(new TextBlock { Text="概率为路线估计", ToolTip="概率来自剩余路线模型，不代表已知本局隐藏旗点；游戏更新后可能需要更新数据。", FontSize=10, Foreground=Brushes.LightSlateGray, Margin=new Thickness(0,8,0,0) });
+            chain.FontSize=11; chain.Foreground=UiTheme.Brush("#A6B2C1"); chain.MaxHeight=16; chain.TextTrimming=TextTrimming.CharacterEllipsis; bottom.Children.Add(chain);
+            message.FontSize=10; message.Foreground=UiTheme.Brush("#778899"); message.TextWrapping=TextWrapping.Wrap; message.MaxHeight=30; message.TextTrimming=TextTrimming.CharacterEllipsis; message.Margin=new Thickness(0,8,0,0); bottom.Children.Add(message);
+            candidates.ToolTip="概率来自剩余路线模型，不代表已知本局隐藏旗点；游戏更新后可能需要更新数据。";
             Grid.SetRow(bottom,2); grid.Children.Add(bottom); Child=grid;
             mapPicker.ItemsSource=repository.Maps;
             mapPicker.SelectionChanged+=delegate { if(!updating && mapPicker.SelectedItem!=null && MapRequested!=null) MapRequested(((RaasMapInfo)mapPicker.SelectedItem).Id); };
@@ -73,7 +74,7 @@ namespace SquadTools
             confirm.Click+=delegate { ConfirmSelected(); }; undo.Click+=delegate { UndoAction(); }; reset.Click+=delegate { if(Session!=null) { Session.Reset(); actionDepths.Clear(); Render(); } };
             Render();
         }
-        private static TextBlock Title(string text,int size) { return new TextBlock { Text=text,FontSize=size,Foreground=new SolidColorBrush(Color.FromRgb(150,165,182)),Margin=new Thickness(0,6,0,6) }; }
+        private static TextBlock Title(string text,int size) { return new TextBlock { Text=text,FontSize=size,Foreground=UiTheme.Brush("#96A5B6"),Margin=new Thickness(0,6,0,6) }; }
         public void SetMap(string id,string rawName,string sourceServerId = null)
         {
             var info=repository.FindMap(id);
@@ -113,10 +114,11 @@ namespace SquadTools
         public void ShowNotice(string notice)
         {
             if(Session!=null) {
-                message.Text=notice ?? (contextServerId==null?"手动 · 默认阵营":"服务器当前阵营");
+                message.Text=notice ?? "";
+                message.Visibility=notice==null?Visibility.Collapsed:Visibility.Visible;
                 message.ToolTip="内置图层 "+Session.Layer.RawName+"\n"+teamSource+"\n数据 "+repository.Updated.Substring(0,Math.Min(10,repository.Updated.Length))+(notice==null?"":"\n"+notice);
             }
-            else if(notice!=null) { message.Text=notice; message.ToolTip=notice; }
+            else if(notice!=null) { message.Text=notice; message.ToolTip=notice; message.Visibility=Visibility.Visible; }
         }
         private int Team(RaasPoint main) { if(main.Id.IndexOf("Team1",StringComparison.OrdinalIgnoreCase)>=0) return 1; if(main.Id.IndexOf("Team2",StringComparison.OrdinalIgnoreCase)>=0) return 2; return main.Id==Session.Solver.Start?1:2; }
         private string MainName(RaasPoint main) { int team=Team(main); return "队伍 "+team+" · "+FactionCatalog.Name(team==1?team1:team2); }
@@ -195,12 +197,15 @@ namespace SquadTools
                     markers.Add(new RaasMarker { Point=flag,Label=label,Caption=flag.Name+(confirmedAt>=0?(isPreview?" · 预览":automatic?" · 自动推导":" · 已确认"):"\n"+(chance>0?"第"+nextStep+"旗 ":"后续合计 ")+(chance>0?chance:total).ToString("P0",CultureInfo.InvariantCulture)),Color=isPreview?"#F6C85F":automatic?"#A0C5F3":confirmedAt>=0?"#E5EDF3":chance>0?"#B8EB7E":"#6E9DD6",Clickable=clickable,ConfirmedStep=confirmedAt+1,IsPreview=isPreview,Automatic=automatic });
                 }
                 bool complete=visible.Steps.Count>0 && nextStep>visible.Steps.Keys.Max();
-                progress.Text=Session.Main==null?"选择己方基地开始":(previewPoint!=null?"预览 · ":"")+(complete?"旗点链已齐全":string.Format("第 {0} 旗 · {1} 个候选",nextStep,next.Count));
+                progress.Text=Session.Main==null?"":(previewPoint!=null?"预览 · ":"")+(complete?"旗点链已齐全":string.Format("第 {0} 旗 · {1} 个候选",nextStep,next.Count));
                 progress.ToolTip=(previewPoint!=null?"假设选择 "+previewPoint.Name+"；尚未确认。\n":"")+"剩余路线 "+visible.Alive+" / "+visible.Total;
                 if(previewPoint!=null) progress.Text+=" · "+visible.Alive+" 条路线";
-                chain.Text=Session.Confirmed.Count==0?"尚未确认旗点。":string.Join(" → ",Session.Confirmed.Select((f,i)=>(i+1)+". "+f.Name+(Session.Automatic.Contains(f)?"（自动）":"")));
+                chain.Text=Session.Confirmed.Count==0?"":string.Join(" → ",Session.Confirmed.Select((f,i)=>(i+1)+". "+f.Name+(Session.Automatic.Contains(f)?"（自动）":"")));
                 chain.ToolTip=chain.Text;
             } else { progress.Text="当前地图暂无可用的 RAAS 猜点数据。"; progress.ToolTip=null; chain.Text=""; chain.ToolTip=null; }
+            progress.Visibility=string.IsNullOrEmpty(progress.Text)?Visibility.Collapsed:Visibility.Visible;
+            chain.Visibility=string.IsNullOrEmpty(chain.Text)?Visibility.Collapsed:Visibility.Visible;
+            if(Session==null) message.Visibility=string.IsNullOrEmpty(message.Text)?Visibility.Collapsed:Visibility.Visible;
             if(previewPoint==null) {
                 var selected=candidates.SelectedItem as RaasCandidate;
                 var choices=next.OrderByDescending(c=>c.Probability).ThenBy(c=>c.Point.Name).ToList();
