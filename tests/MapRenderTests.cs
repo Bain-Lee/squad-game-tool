@@ -280,6 +280,49 @@ internal static class MapRenderTests
         Up(view, MouseButton.Middle, far);
         Check(placed == before && !(bool)Get(view, "dragging"), "middle pan remains available");
         TestTargetDragging();
+        TestRaasPointerGestures();
+    }
+
+    private static void TestRaasPointerGestures()
+    {
+        var view = new MapView { PredictionMode = true };
+        var flag = new RaasPoint { Id = "flag", Name = "Flag", Position = new Vec2(1500, 1500) };
+        view.SetPredictionMarkers(new[] { new RaasMarker { Point = flag, Label = "1", Caption = "Flag", Color = "#B8EB7E", Clickable = true } });
+        Layout(view, 900, 700); view.ZoomBy(2); Update(view);
+        int confirmed = 0, shootingPlacements = 0;
+        view.PredictionPointClicked += delegate { confirmed++; };
+        view.PointPlaced += delegate { shootingPlacements++; };
+        Point point = (Point)Call(view, "Screen", flag.Position);
+        Call(view, "UpdatePointerCursor", point); Check(view.Cursor == Cursors.Hand, "RAAS candidate hover shows a hand");
+        Click(view, MouseButton.Left, point, 1);
+        Check(confirmed == 0, "RAAS single left click does not confirm");
+        int builds = view.SceneBuildCount;
+        var end = point + new Vector(60, 45);
+        Down(view, MouseButton.Left, point, 2); Move(view, end); Up(view, MouseButton.Left, end);
+        Check(confirmed == 0, "RAAS drag starting on a flag does not confirm it");
+        Check((Vector)Get(view, "pan") == new Vector(60, 45), "RAAS left drag moves the viewport");
+        Check(view.SceneBuildCount == builds, "RAAS left pan retains drawing commands");
+        Check(flag.Position.X == 1500 && flag.Position.Y == 1500, "panning over a RAAS flag preserves its map coordinates");
+        point = (Point)Call(view, "Screen", flag.Position);
+        Click(view, MouseButton.Left, point, 1); Down(view, MouseButton.Left, point, 2);
+        Check(confirmed == 0, "RAAS double click confirms on release");
+        Up(view, MouseButton.Left, point);
+        Check(confirmed == 1 && shootingPlacements == 0, "RAAS double click confirms only the RAAS candidate");
+        Click(view, MouseButton.Left, point, 3);
+        Check(confirmed == 1, "RAAS third rapid click begins a fresh pair");
+        Click(view, MouseButton.Left, point, 4);
+        Check(confirmed == 2, "RAAS fourth rapid click finishes the fresh pair");
+        Vector pan = (Vector)Get(view, "pan");
+        Down(view, MouseButton.Right, point, 1); Move(view, end + new Vector(90, 60)); Up(view, MouseButton.Right, point);
+        Check((Vector)Get(view, "pan") == pan && confirmed == 2 && shootingPlacements == 0, "RAAS right gesture does not trigger a different map action");
+        Click(view, MouseButton.Left, point, 1); Down(view, MouseButton.Left, point, 2);
+        view.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.LostMouseCaptureEvent });
+        Up(view, MouseButton.Left, point);
+        Check(confirmed == 2, "capture loss cancels pending RAAS confirmation");
+        view.ResetView(); point = (Point)Call(view, "Screen", flag.Position);
+        Click(view, MouseButton.Left, point, 1); view.PredictionMode = false; view.PredictionMode = true;
+        Click(view, MouseButton.Left, point, 2);
+        Check(confirmed == 2, "a click from another mode cannot complete a RAAS double click");
     }
 
     private static void TestTargetDragging()

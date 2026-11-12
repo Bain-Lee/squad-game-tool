@@ -251,8 +251,8 @@ namespace SquadTools
             map.PredictionMode=raasMode;
             ((UIElement)root.FindName("ShootingDisplay")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             if(raasView!=null) raasView.PreviewPoint(null);
-            ((TextBlock)root.FindName("MapGestureHint")).Text=raasMode?"点选旗点确认":"左键拖图 · 双击目标 · 右键炮位";
-            ((TextBlock)root.FindName("MapGestureHint")).ToolTip=raasMode?"左键点选旗点确认；右键或中键拖动地图；滚轮缩放。":"按住左键或中键拖动地图；左键双击设置目标；右键单击设置炮位；鼠标移到目标点上显示手形，按住左键拖动目标；滚轮缩放。";
+            ((TextBlock)root.FindName("MapGestureHint")).Text=raasMode?"左键拖图 · 双击确认旗点":"左键拖图 · 双击目标 · 右键炮位";
+            ((TextBlock)root.FindName("MapGestureHint")).ToolTip=raasMode?"按住左键或中键拖动地图；左键双击基地或候选旗点进行确认；滚轮缩放。":"按住左键或中键拖动地图；左键双击设置目标；右键单击设置炮位；鼠标移到目标点上显示手形，按住左键拖动目标；滚轮缩放。";
             if(raasMode) EnsureRaasView();
             if(!selected) {
                 ApplyFollowedMap();
@@ -784,7 +784,7 @@ namespace SquadTools
                 "6. 右上角依次是透明度、置顶、浅色 / 深色主题、帮助。点击透明度图标可展开滑动条，拖动时实时预览；不透明度最低为 30%。透明度、置顶与主题会保存，重启后恢复。\n\n" +
                 "贝拉亚为暂退役的旧版地图，仅提供底图和手动高差。本版不判断地形遮挡，不含 OCR 或游戏读取，命中精度尚未经游戏实测。\n\n" +
                 "服务器列表：点选仅查看详情。点击“启用地图跟随”后仍停留在列表，手动进入射击计算或 RAAS 猜点才同步，并每 60 秒跟随换图。非 RAAS 或未收录图层时，猜点保留手动地图和确认链。可在列表或射击页停止跟随。上报人数、EOS 登记与可见成员口径不同；持续差异提示不等于已证实阴兵。\n\n" +
-                "RAAS 猜点：顶部选择该页，指定地图、具体 RAAS 图层和己方基地，依次确认旗点。基地显示对应国旗或阵营代号；跟随时用服务器当前阵营，手动模式用图层默认阵营，缺失则显示未知。支持上一步与重置，数据内置且可离线计算。概率为路线模型估计，游戏更新后可能需要更新数据。\n\n" +
+                "RAAS 猜点：顶部选择该页，指定地图、具体 RAAS 图层和己方基地。按住左键拖动地图，左键双击基地或候选旗点进行确认，也可在左侧列表选择后确认。基地显示对应国旗或阵营代号；跟随时用服务器当前阵营，手动模式用图层默认阵营，缺失则显示未知。支持上一步与重置，数据内置且可离线计算。概率为路线模型估计，游戏更新后可能需要更新数据。\n\n" +
                 "算法及游戏参数参考 sh4rkman/SquadCalc（非商业许可）。地图素材归各自权利人。详见随附说明与 third_party。",
                 "使用说明 · 游戏 Squad 专用");
         }
@@ -1040,7 +1040,7 @@ namespace SquadTools
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-   <TextBlock Grid.Row='3' Text='Squad Tools · 0.8.2 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
+   <TextBlock Grid.Row='3' Text='Squad Tools · 0.8.3 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 
