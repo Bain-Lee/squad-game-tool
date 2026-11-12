@@ -17,7 +17,6 @@ namespace SquadTools
         public Vec2 Target;
         public bool HasMarkers;
         public BitmapSource MapImage;
-        public bool PlaceWeapon;
         public double RangeMeters = Ballistics.Velocity * Ballistics.Velocity / Ballistics.Gravity;
         public event Action<Vec2, bool> PointPlaced;
         public event Action<RaasPoint> PredictionPointClicked;
@@ -32,7 +31,7 @@ namespace SquadTools
         private IList<RaasMarker> predictionMarkers = new List<RaasMarker>();
         private bool predictionMode;
         private int predictionRevision, drawnPredictionRevision;
-        public bool PredictionMode { get { return predictionMode; } set { if(predictionMode==value) return; predictionMode=value; SetHoveredPrediction(null); predictionRevision++; InvalidateVisual(); } }
+        public bool PredictionMode { get { return predictionMode; } set { if(predictionMode==value) return; EndDrag(); predictionMode=value; SetHoveredPrediction(null); predictionRevision++; InvalidateVisual(); } }
         public void SetPredictionMarkers(IList<RaasMarker> markers)
         {
             predictionMarkers=markers??new List<RaasMarker>();
@@ -47,7 +46,8 @@ namespace SquadTools
         private Vector panStart;
         private bool dragging, pendingViewport, listeningForFrame;
         private MouseButton dragButton = MouseButton.Middle;
-        private bool dragMoved, rightClickPending, weaponDoubleClick;
+        private bool dragMoved, leftClickPending, targetDoubleClick, draggingTarget;
+        private Vec2 targetDragStart;
         private readonly Typeface font = new Typeface("Microsoft YaHei UI");
         private readonly DrawingVisual scene = new DrawingVisual();
         private readonly DrawingVisual columnLabels = new DrawingVisual();
@@ -87,7 +87,8 @@ namespace SquadTools
             MouseDown += OnDown;
             MouseMove += OnMove;
             MouseUp += OnUp;
-            MouseLeave += delegate { SetHoveredPrediction(null); };
+            MouseEnter += delegate(object sender, MouseEventArgs e) { UpdatePointerCursor(e.GetPosition(this)); };
+            MouseLeave += delegate { SetHoveredPrediction(null); if (!dragging) Cursor = Cursors.Cross; };
             LostMouseCapture += delegate { EndDrag(); };
             Unloaded += delegate { EndDrag(); };
             SizeChanged += delegate { InvalidateVisual(); };
@@ -107,7 +108,7 @@ namespace SquadTools
         private Vec2 World(Point p) { Point o = Origin; return new Vec2((p.X - o.X) / Scale, (p.Y - o.Y) / Scale); }
         private static Point Local(Vec2 p, double scale) { return new Point(p.X * scale, p.Y * scale); }
         public void ResetView() { EndDrag(); zoom = 1; pan = new Vector(); InvalidateVisual(); }
-        public void ZoomBy(double factor) { rightClickPending = weaponDoubleClick = false; zoom = Math.Max(0.7, Math.Min(12, zoom * factor)); InvalidateVisual(); }
+        public void ZoomBy(double factor) { EndDrag(); zoom = Math.Max(0.7, Math.Min(12, zoom * factor)); InvalidateVisual(); }
 
         private void OnWheel(object sender, MouseWheelEventArgs e)
         {
@@ -117,7 +118,8 @@ namespace SquadTools
 
         private void ZoomAt(Point p, double factor)
         {
-            rightClickPending = weaponDoubleClick = false;
+            leftClickPending = targetDoubleClick = false;
+            if (draggingTarget || dragging && dragButton == MouseButton.Right && !PredictionMode) EndDrag();
             Vec2 before = World(p);
             zoom = Math.Max(0.7, Math.Min(12, zoom * factor));
             pan += p - Screen(before);
@@ -133,24 +135,42 @@ namespace SquadTools
 
         private bool HandlePointerDown(MouseButton button, Point position, int clickCount)
         {
-            // Another button must not place a marker or replace the active drag.
             if (dragging) return true;
-            if (button == MouseButton.Right || button == MouseButton.Middle)
-            {
-                // WPF supplies the system double-click time and distance checks.
-                // Also require a completed, unmoved first click: drags count as
-                // presses to WPF, but must never count as our first click.
-                weaponDoubleClick = button == MouseButton.Right && clickCount > 1 && rightClickPending;
-                rightClickPending = false;
-                dragging = true; dragMoved = false; dragButton = button;
-                SetHoveredPrediction(null);
-                dragStart = position; panStart = pan;
-                CaptureMouse(); Cursor = Cursors.SizeAll;
+            if (button == MouseButton.Left && PredictionMode) {
+                ClickPrediction(position);
                 return true;
             }
-            rightClickPending = false;
-            if (button == MouseButton.Left && PredictionMode) { ClickPrediction(position); return true; }
-            return button == MouseButton.Left && PlaceAt(position, PlaceWeapon);
+            if (button != MouseButton.Left && button != MouseButton.Right && button != MouseButton.Middle) return false;
+
+            // WPF supplies double-click timing and distance. A prior pan or
+            // target drag must not count as the first click of target placement.
+            targetDoubleClick = button == MouseButton.Left && clickCount > 1 && leftClickPending;
+            leftClickPending = false;
+            draggingTarget = button == MouseButton.Left && HitTarget(position);
+            targetDragStart = Target;
+            dragging = true;
+            dragMoved = false;
+            dragButton = button;
+            dragStart = position;
+            panStart = pan;
+            SetHoveredPrediction(null);
+            CaptureMouse();
+            UpdatePointerCursor(position);
+            return true;
+        }
+
+        private bool HitTarget(Point position)
+        {
+            if (PredictionMode || !HasMarkers) return false;
+            Vector delta = position - Screen(Target);
+            return delta.LengthSquared <= 144 || new Rect(7, 2, 15, 16).Contains(new Point(delta.X, delta.Y));
+        }
+
+        private void UpdatePointerCursor(Point position)
+        {
+            if (draggingTarget || !dragging && HitTarget(position)) Cursor = Cursors.Hand;
+            else if (dragging && (dragButton != MouseButton.Right || PredictionMode)) Cursor = Cursors.SizeAll;
+            else Cursor = Cursors.Cross;
         }
 
         private void ClickPrediction(Point position)
@@ -179,6 +199,7 @@ namespace SquadTools
         private void OnMove(object sender, MouseEventArgs e)
         {
             MoveDrag(e.GetPosition(this));
+            UpdatePointerCursor(e.GetPosition(this));
             if(PredictionMode && !dragging) {
                 Point cursor=e.GetPosition(this);
                 var marker=predictionMarkers.Where(m=>PredictionHit(m,cursor)).OrderBy(m=>(Screen(m.Point.Position)-cursor).LengthSquared).FirstOrDefault();
@@ -196,7 +217,7 @@ namespace SquadTools
         private void BeginPan()
         {
             if (!dragMoved) RenderOptions.SetBitmapScalingMode(scene, BitmapScalingMode.LowQuality);
-            dragMoved = true; weaponDoubleClick = false;
+            dragMoved = true; targetDoubleClick = leftClickPending = false;
         }
 
         private void MoveDrag(Point position)
@@ -206,6 +227,19 @@ namespace SquadTools
             // Ignore click jitter so a double-click keeps the map stationary.
             if (!dragMoved && Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
                 Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            if (draggingTarget) {
+                dragMoved = true;
+                targetDoubleClick = leftClickPending = false;
+                var target = new Vec2(
+                    Math.Max(0, Math.Min(WorldSize - 0.000001, targetDragStart.X + delta.X / Scale)),
+                    Math.Max(0, Math.Min(WorldHeight - 0.000001, targetDragStart.Y + delta.Y / Scale)));
+                if (PointPlaced != null) PointPlaced(target, false);
+                return;
+            }
+            if (dragButton == MouseButton.Right && !PredictionMode) {
+                dragMoved = true;
+                return;
+            }
             BeginPan();
             pan = panStart + delta;
             pendingViewport = true;
@@ -223,13 +257,16 @@ namespace SquadTools
         {
             if (!dragging || button != dragButton) return false;
             MoveDrag(position);
-            bool placeWeapon = weaponDoubleClick && !dragMoved;
-            bool firstRightClick = button == MouseButton.Right && !dragMoved && !placeWeapon;
+            bool placeTarget = targetDoubleClick && !dragMoved && !PredictionMode;
+            bool placeWeapon = button == MouseButton.Right && !dragMoved && !PredictionMode;
+            bool firstLeftClick = button == MouseButton.Left && !dragMoved && !placeTarget && !PredictionMode;
             // Release capture and commit any pending pan before notifying the UI.
             // LostMouseCapture also clears click state, so restore it afterwards.
             EndDrag();
-            rightClickPending = firstRightClick;
-            if (placeWeapon && !PredictionMode) PlaceAt(position, true);
+            leftClickPending = firstLeftClick;
+            if (placeTarget) PlaceAt(position, false);
+            if (placeWeapon) PlaceAt(position, true);
+            UpdatePointerCursor(position);
             return true;
         }
 
@@ -242,7 +279,7 @@ namespace SquadTools
         private void EndDrag()
         {
             dragging = false;
-            dragMoved = rightClickPending = weaponDoubleClick = false;
+            dragMoved = leftClickPending = targetDoubleClick = draggingTarget = false;
             if (listeningForFrame) { CompositionTarget.Rendering -= OnFrame; listeningForFrame = false; }
             if (pendingViewport) { pendingViewport = false; UpdateViewport(); }
             RenderOptions.SetBitmapScalingMode(scene, BitmapScalingMode.HighQuality);

@@ -135,7 +135,7 @@ internal static class MapRenderTests
         }
         TestPointerGestures();
         TestThemeRendering(image);
-        Console.WriteLine("Map render tests passed: " + assertions + " assertions; retained pan, right-button drag/double-click isolation, precise coordinates, rectangular clips, pinned labels, wheel anchor, resize, source/marker changes, live warm map themes and capture/reset lifecycle.");
+        Console.WriteLine("Map render tests passed: " + assertions + " assertions; retained left pan, left double-click target, right-click mortar, target hover/drag, precise coordinates, rectangular clips, pinned labels, wheel anchor, resize, live warm map themes and capture/reset lifecycle.");
         return 0;
     }
 
@@ -187,97 +187,148 @@ internal static class MapRenderTests
 
     private static void TestPointerGestures()
     {
-        MapView view = new MapView(); Layout(view, 900, 700); view.ZoomBy(3); Update(view);
+        var view = new MapView(); Layout(view, 900, 700); view.ZoomBy(3); Update(view);
         int placed = 0; bool lastWeapon = false; Vec2 lastPoint = new Vec2();
-        view.PointPlaced += delegate(Vec2 point, bool weapon) { placed++; lastPoint = point; lastWeapon = weapon; };
+        view.PointPlaced += delegate(Vec2 point, bool weapon) {
+            placed++; lastPoint = point; lastWeapon = weapon;
+            if (weapon) view.Weapon = point; else view.Target = point;
+        };
         Point anchor = new Point(450.25, 350.125);
-        DrawingVisual scene = (DrawingVisual)Get(view, "scene");
-        double jitterX = SystemParameters.MinimumHorizontalDragDistance / 4;
-        double jitterY = SystemParameters.MinimumVerticalDragDistance / 4;
-        Point jitter = anchor + new Vector(jitterX, jitterY);
+        Point jitter = anchor + new Vector(SystemParameters.MinimumHorizontalDragDistance / 4, SystemParameters.MinimumVerticalDragDistance / 4);
         Point far = anchor + new Vector(SystemParameters.MinimumHorizontalDragDistance + 80, SystemParameters.MinimumVerticalDragDistance + 60);
+        var scene = (DrawingVisual)Get(view, "scene");
 
-        // A single right click, including normal hand jitter, changes neither point nor pan.
-        Down(view, MouseButton.Right, anchor, 1); Move(view, jitter); Up(view, MouseButton.Right, jitter);
-        Check(placed == 0, "right single click must not place any marker");
-        Check((Vector)Get(view, "pan") == new Vector(), "click jitter must not pan the map");
+        Down(view, MouseButton.Left, anchor, 1); Move(view, jitter); Up(view, MouseButton.Left, jitter);
+        Check(placed == 0, "left single click does not place a target");
+        Check((Vector)Get(view, "pan") == new Vector(), "click jitter does not pan the map");
         Check(RenderOptions.GetBitmapScalingMode(scene) == BitmapScalingMode.HighQuality, "stationary click keeps sharp sampling");
-
         Vec2 expected = (Vec2)Call(view, "World", jitter);
-        Down(view, MouseButton.Right, anchor, 2);
-        Check(placed == 0, "double right press defers placement until release");
+        Down(view, MouseButton.Left, anchor, 2);
+        Check(placed == 0, "target double click waits for release");
+        Move(view, jitter); Up(view, MouseButton.Left, jitter);
+        Check(placed == 1 && !lastWeapon, "completed left double click places the target");
+        Near(expected.X, lastPoint.X, "double left exact X"); Near(expected.Y, lastPoint.Y, "double left exact Y");
+        Check((Vector)Get(view, "pan") == new Vector(), "double click keeps viewport stationary");
+        Click(view, MouseButton.Left, anchor, 3);
+        Check(placed == 1, "third rapid left click starts another pair");
+        Click(view, MouseButton.Left, anchor, 4);
+        Check(placed == 2 && !lastWeapon, "fourth rapid left click completes another target placement");
+
+        Down(view, MouseButton.Right, anchor, 1);
+        Check(placed == 2, "right press waits for a completed click");
         Move(view, jitter); Up(view, MouseButton.Right, jitter);
-        Check(placed == 1 && lastWeapon, "completed right double click places the mortar once");
-        Near(expected.X, lastPoint.X, "double right exact X"); Near(expected.Y, lastPoint.Y, "double right exact Y");
-        Check((Vector)Get(view, "pan") == new Vector(), "double click must keep viewport still");
-        Click(view, MouseButton.Right, anchor, 3);
-        Check(placed == 1, "third rapid click starts a new pair");
-        Click(view, MouseButton.Right, anchor, 4);
-        Check(placed == 2, "fourth rapid click completes the next pair");
+        Check(placed == 3 && lastWeapon, "right single click places the mortar");
+        Near(expected.X, lastPoint.X, "right single exact X"); Near(expected.Y, lastPoint.Y, "right single exact Y");
+        Click(view, MouseButton.Right, anchor, 2);
+        Check(placed == 4 && lastWeapon, "a repeated right click still places the mortar");
+        int before = placed;
+        Down(view, MouseButton.Right, anchor, 1); Move(view, far); Move(view, anchor); Up(view, MouseButton.Right, anchor);
+        Check(placed == before && (Vector)Get(view, "pan") == new Vector(), "right movement cancels placement without panning");
 
-        // Right dragging uses the retained renderer and never inherits left-button mode.
-        view.ResetView(); view.ZoomBy(8); Update(view); view.PlaceWeapon = true;
+        view.ResetView(); view.ZoomBy(8); Update(view);
         int builds = view.SceneBuildCount, updates = view.ViewportUpdateCount;
-        Down(view, MouseButton.Right, anchor, 1); Move(view, far);
-        Check(placed == 2, "right drag never places a mortar in weapon mode");
-        Check(view.ViewportUpdateCount == updates, "right drag coalesces moves into a frame");
-        Check(RenderOptions.GetBitmapScalingMode(scene) == BitmapScalingMode.LowQuality, "right drag enables fast sampling");
-        Up(view, MouseButton.Left, far); Up(view, MouseButton.Middle, far);
-        Check((bool)Get(view, "dragging"), "other button releases must not finish right drag");
-        Down(view, MouseButton.Left, far, 1);
-        Check(placed == 2, "left press during right drag must not place a marker");
-        Up(view, MouseButton.Right, far);
+        Down(view, MouseButton.Left, anchor, 1); Move(view, far);
+        Check(placed == before, "left pan does not place a marker");
+        Check(view.ViewportUpdateCount == updates, "left pan coalesces viewport updates");
+        Check(RenderOptions.GetBitmapScalingMode(scene) == BitmapScalingMode.LowQuality, "left pan uses fast sampling");
+        Up(view, MouseButton.Right, far); Up(view, MouseButton.Middle, far);
+        Check((bool)Get(view, "dragging"), "other button releases do not end left pan");
+        Down(view, MouseButton.Right, far, 1);
+        Check(placed == before, "right press during left pan does not place a mortar");
+        Up(view, MouseButton.Left, far);
         Vector delta = far - anchor, pan = (Vector)Get(view, "pan");
-        Near(delta.X, pan.X, "right drag moves pan X"); Near(delta.Y, pan.Y, "right drag moves pan Y");
-        Check(view.SceneBuildCount == builds, "right drag retains the scene at eight times zoom");
-        Check(!(bool)Get(view, "dragging") && !(bool)Get(view, "listeningForFrame"), "right release finishes drag and frame subscription");
-        Check(RenderOptions.GetBitmapScalingMode(scene) == BitmapScalingMode.HighQuality, "right release restores sharp sampling");
-        Click(view, MouseButton.Right, far, 2);
-        Check(placed == 2, "a completed drag cannot be the first half of a double click");
-        Click(view, MouseButton.Right, far, 3);
-        Check(placed == 3, "two fresh stationary clicks after dragging can place a mortar");
+        Near(delta.X, pan.X, "left pan X"); Near(delta.Y, pan.Y, "left pan Y");
+        Check(view.SceneBuildCount == builds, "left pan retains map drawing commands");
+        Check(!(bool)Get(view, "dragging") && !(bool)Get(view, "listeningForFrame"), "left release clears capture and frame subscription");
+        Check(RenderOptions.GetBitmapScalingMode(scene) == BitmapScalingMode.HighQuality, "left release restores sharp sampling");
+        Click(view, MouseButton.Left, far, 2);
+        Check(placed == before, "pan cannot be the first click of target placement");
+        Click(view, MouseButton.Left, far, 3);
+        Check(placed == before + 1 && !lastWeapon, "two stationary clicks after pan place a target");
 
-        // A second press that starts moving is a drag, even if it returns to its origin.
-        view.ResetView();
-        Click(view, MouseButton.Right, anchor, 1);
-        Down(view, MouseButton.Right, anchor, 2); Move(view, far); Move(view, anchor); Up(view, MouseButton.Right, anchor);
-        Check(placed == 3, "dragging out and back during second click cancels placement");
-        Click(view, MouseButton.Right, anchor, 1);
-        Down(view, MouseButton.Right, anchor, 2); Up(view, MouseButton.Right, far);
-        Check(placed == 3, "release-only movement must also cancel double-click placement");
+        before = placed; view.ResetView();
+        Click(view, MouseButton.Left, anchor, 1);
+        Down(view, MouseButton.Left, anchor, 2); Move(view, far); Move(view, anchor); Up(view, MouseButton.Left, anchor);
+        Check(placed == before, "moving out and back cancels a double click");
+        Click(view, MouseButton.Left, anchor, 1);
+        Down(view, MouseButton.Left, anchor, 2); Up(view, MouseButton.Left, far);
+        Check(placed == before, "release-only movement pans instead of placing a target");
         pan = (Vector)Get(view, "pan");
         Near(delta.X, pan.X, "release-only pan X"); Near(delta.Y, pan.Y, "release-only pan Y");
 
-        // Capture loss, unload, reset and zoom cancel incomplete click sequences.
-        view.ResetView(); Click(view, MouseButton.Right, anchor, 1); Down(view, MouseButton.Right, anchor, 2);
+        view.ResetView(); Click(view, MouseButton.Left, anchor, 1); Down(view, MouseButton.Left, anchor, 2);
         view.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.LostMouseCaptureEvent });
-        Up(view, MouseButton.Right, anchor); Click(view, MouseButton.Right, anchor, 2);
-        Check(placed == 3, "lost capture clears both the active gesture and previous click");
-        view.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));
-        Click(view, MouseButton.Right, anchor, 2);
-        Check(placed == 3, "unload clears the previous right click");
-        view.ResetView(); Click(view, MouseButton.Right, anchor, 2);
-        Check(placed == 3, "reset clears the previous right click");
-        view.ZoomBy(1.3); Click(view, MouseButton.Right, anchor, 2);
-        Check(placed == 3, "toolbar zoom clears the previous right click");
-        Down(view, MouseButton.Right, anchor, 2); Call(view, "ZoomAt", anchor, 1.2); Up(view, MouseButton.Right, anchor);
-        Check(placed == 3, "wheel zoom during a second right press cancels marker placement");
-        Click(view, MouseButton.Right, anchor, 1); Click(view, MouseButton.Right, anchor, 1);
-        Check(placed == 3, "clicks outside system double-click limits remain single clicks");
+        Up(view, MouseButton.Left, anchor); Click(view, MouseButton.Left, anchor, 2);
+        Check(placed == before, "lost capture clears pending target placement");
+        view.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent)); Click(view, MouseButton.Left, anchor, 2);
+        Check(placed == before, "unload clears double-click state");
+        view.ResetView(); Click(view, MouseButton.Left, anchor, 2);
+        Check(placed == before, "reset clears double-click state");
+        view.ZoomBy(1.3); Click(view, MouseButton.Left, anchor, 2);
+        Check(placed == before, "toolbar zoom clears double-click state");
+        Down(view, MouseButton.Left, anchor, 2); Call(view, "ZoomAt", anchor, 1.2); Up(view, MouseButton.Left, anchor);
+        Check(placed == before, "wheel zoom cancels pending double-click placement");
+        Click(view, MouseButton.Left, anchor, 1); Click(view, MouseButton.Left, anchor, 1);
+        Check(placed == before, "clicks outside the system double-click interval stay single");
 
         view.ResetView();
         Point outside = (Point)Call(view, "Screen", new Vec2(-1, 100));
-        Click(view, MouseButton.Right, outside, 1); Click(view, MouseButton.Right, outside, 2);
-        Check(placed == 3, "right double click outside map bounds must not place a mortar");
-        view.PlaceWeapon = false; Click(view, MouseButton.Left, anchor, 1);
-        Check(placed == 4 && !lastWeapon, "left click still places the target");
-        expected = (Vec2)Call(view, "World", anchor);
-        Near(expected.X, lastPoint.X, "left exact X"); Near(expected.Y, lastPoint.Y, "left exact Y");
-        view.PlaceWeapon = true; Click(view, MouseButton.Left, anchor, 1);
-        Check(placed == 5 && lastWeapon, "left click still follows the toolbar weapon mode");
+        Click(view, MouseButton.Left, outside, 1); Click(view, MouseButton.Left, outside, 2); Click(view, MouseButton.Right, outside, 1);
+        Check(placed == before, "neither marker can be placed outside map bounds");
         Down(view, MouseButton.Middle, anchor, 1); Move(view, far); Up(view, MouseButton.Right, far);
-        Check((bool)Get(view, "dragging"), "right release must not finish middle drag");
+        Check((bool)Get(view, "dragging"), "right release does not finish middle pan");
         Up(view, MouseButton.Middle, far);
-        Check(placed == 5 && !(bool)Get(view, "dragging"), "middle-button dragging remains available without placing markers");
+        Check(placed == before && !(bool)Get(view, "dragging"), "middle pan remains available");
+        TestTargetDragging();
+    }
+
+    private static void TestTargetDragging()
+    {
+        var view = new MapView { WorldSize = 6000, WorldHeight = 3000, HasMarkers = true, Target = new Vec2(3000, 1500), Weapon = new Vec2(2300, 1100) };
+        Layout(view, 900, 700); view.ZoomBy(2); Update(view);
+        int placed = 0; bool lastWeapon = true;
+        view.PointPlaced += delegate(Vec2 point, bool weapon) { placed++; lastWeapon = weapon; if (weapon) view.Weapon = point; else view.Target = point; view.InvalidateVisual(); };
+        Vec2 original = view.Target, weaponPosition = view.Weapon;
+        double scale = (double)typeof(MapView).GetProperty("Scale", Private).GetValue(view, null);
+        Point center = (Point)Call(view, "Screen", view.Target);
+        Point grab = center + new Vector(5, 3), destination = grab + new Vector(78, 55);
+        Call(view, "UpdatePointerCursor", grab); Check(view.Cursor == Cursors.Hand, "hovering the target shows a hand cursor");
+        Call(view, "UpdatePointerCursor", center + new Vector(16, 12)); Check(view.Cursor == Cursors.Hand, "the target label also offers target dragging");
+        Call(view, "UpdatePointerCursor", center + new Vector(20, 20)); Check(view.Cursor == Cursors.Cross, "away from the target uses the normal map cursor");
+        Down(view, MouseButton.Left, grab, 1);
+        Check(view.Cursor == Cursors.Hand, "target drag keeps the hand cursor");
+        Move(view, grab + new Vector(1, 1)); Check(placed == 0, "target click jitter does not move the target");
+        Move(view, destination);
+        Check(placed == 1 && !lastWeapon, "held target drag publishes a target update before release");
+        Near(original.X + 78 / scale, view.Target.X, "drag preserves grab offset X"); Near(original.Y + 55 / scale, view.Target.Y, "drag preserves grab offset Y");
+        Check((Vector)Get(view, "pan") == new Vector(), "target drag keeps the map stationary");
+        Check(view.Weapon.X == weaponPosition.X && view.Weapon.Y == weaponPosition.Y, "target drag keeps the mortar fixed");
+        Up(view, MouseButton.Right, destination); Check((bool)Get(view, "dragging"), "other button release does not end target drag");
+        Point release = grab + new Vector(92, 66); Up(view, MouseButton.Left, release);
+        Near(original.X + 92 / scale, view.Target.X, "release commits final target X"); Near(original.Y + 66 / scale, view.Target.Y, "release commits final target Y");
+        Check(!(bool)Get(view, "dragging") && !(bool)Get(view, "draggingTarget"), "release completes target drag");
+
+        center = (Point)Call(view, "Screen", view.Target);
+        Click(view, MouseButton.Left, center, 1);
+        Down(view, MouseButton.Left, center, 2); Move(view, center + new Vector(60, 40)); Up(view, MouseButton.Left, center + new Vector(60, 40));
+        Check((Vector)Get(view, "pan") == new Vector() && !lastWeapon, "a second press on the target still drags the target");
+        center = (Point)Call(view, "Screen", view.Target);
+        Down(view, MouseButton.Left, center, 1);
+        Point outside = (Point)Call(view, "Screen", new Vec2(7000, -1000));
+        Move(view, outside); Up(view, MouseButton.Left, outside);
+        Check(view.Target.X >= 0 && view.Target.X < view.WorldSize && view.Target.Y >= 0 && view.Target.Y < view.WorldHeight, "dragging beyond the map clamps to a valid point");
+        Near(view.WorldSize - 0.000001, view.Target.X, "target clamps at the far edge"); Near(0, view.Target.Y, "target clamps at the top edge");
+
+        view.Target = original; center = (Point)Call(view, "Screen", original);
+        Down(view, MouseButton.Left, center, 1); Move(view, center + new Vector(30, 20));
+        view.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.LostMouseCaptureEvent });
+        int before = placed; Up(view, MouseButton.Left, center + new Vector(60, 40));
+        Check(placed == before && !(bool)Get(view, "draggingTarget"), "capture loss prevents a later release from moving the target");
+        center = (Point)Call(view, "Screen", view.Target);
+        Down(view, MouseButton.Left, center, 1); Call(view, "ZoomAt", center, 1.2); Up(view, MouseButton.Left, center + new Vector(60, 40));
+        Check(placed == before && !(bool)Get(view, "dragging"), "wheel zoom ends an active target drag cleanly");
+        center = (Point)Call(view, "Screen", view.Target);
+        Down(view, MouseButton.Left, center, 1); view.PredictionMode = true; Up(view, MouseButton.Left, center + new Vector(60, 40));
+        Check(placed == before && !(bool)Get(view, "dragging"), "switching to RAAS cancels a shooting gesture");
     }
 }

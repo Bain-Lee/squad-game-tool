@@ -120,8 +120,6 @@ namespace SquadTools
             Closed += delegate { if (serverBrowser != null) serverBrowser.Dispose(); };
             ((CheckBox)root.FindName("Pin")).Checked += delegate { Topmost = true; };
             ((CheckBox)root.FindName("Pin")).Unchecked += delegate { Topmost = false; };
-            ((RadioButton)root.FindName("PlaceMortar")).Checked += delegate { map.PlaceWeapon = true; };
-            ((RadioButton)root.FindName("PlaceTarget")).Checked += delegate { map.PlaceWeapon = false; };
             mapSelector.SelectionChanged += delegate { if (!loading) { if(!raasMode || CanFollowRaas()) StopServerFollow(); currentLayerRawName=null; ApplySelectedMap(true); if(raasMode) UpdateRaasMap(); } };
             weaponGrid.TextChanged += delegate { if (!loading) { preciseWeapon = null; Recalculate(); } };
             targetGrid.TextChanged += delegate { if (!loading) { preciseTarget = null; Recalculate(); } };
@@ -250,11 +248,11 @@ namespace SquadTools
             ((UIElement)root.FindName("FireControls")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             ((UIElement)root.FindName("RaasHost")).Visibility=raasMode?Visibility.Visible:Visibility.Collapsed;
             ((TextBlock)root.FindName("PageTitle")).Text=raasMode?"RAAS 猜点":"射击计算";
-            ((RadioButton)root.FindName("PlaceTarget")).Visibility=((RadioButton)root.FindName("PlaceMortar")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             map.PredictionMode=raasMode;
             ((UIElement)root.FindName("ShootingDisplay")).Visibility=raasMode?Visibility.Collapsed:Visibility.Visible;
             if(raasView!=null) raasView.PreviewPoint(null);
-            ((TextBlock)root.FindName("MapGestureHint")).Text=raasMode?"点选旗点确认":"左键目标 · 右键双击炮位";
+            ((TextBlock)root.FindName("MapGestureHint")).Text=raasMode?"点选旗点确认":"左键拖图 · 双击目标 · 右键炮位";
+            ((TextBlock)root.FindName("MapGestureHint")).ToolTip=raasMode?"左键点选旗点确认；右键或中键拖动地图；滚轮缩放。":"按住左键或中键拖动地图；左键双击设置目标；右键单击设置炮位；鼠标移到目标点上显示手形，按住左键拖动目标；滚轮缩放。";
             if(raasMode) EnsureRaasView();
             if(!selected) {
                 ApplyFollowedMap();
@@ -779,7 +777,7 @@ namespace SquadTools
             MessageBox.Show(this,
                 "1. 在左侧选择游戏地图。地图图片和尺寸已本地保存；切换后使用该地图的实际宽高。也可选择自定义图片 / 空白网格。\n\n" +
                 "2. 填写游戏网格坐标，如 D05-5-5。每个大格 300 米，九宫格顺序与数字小键盘一致。按最细小格中心计算。\n\n" +
-                "地图左键放目标，双击右键放炮位；按住右键移动鼠标可拖动地图，滚轮缩放，也支持中键拖动。右键单击不放置标记，双击的第二次松开时设置炮位；拖动不会设置炮位。地图点击保留实际位置，不吸附到网格中心；框内网格仅作参考，悬停可查看实际米制坐标。\n\n" +
+                "地图按住左键拖动，左键双击放目标，右键单击放炮位，也支持中键拖动和滚轮缩放。鼠标移到目标点上显示手形，按住左键即可拖动目标；拖到地图边缘时目标停在边界内。地图点击和拖动保留实际位置；框内网格仅作参考，悬停可查看实际米制坐标。\n\n" +
                 "3. 只显示目标相对炮位的地面高差；有地形数据时自动随坐标更新。自定义图片、旧版 Belaya 等无地形数据的地图可手动填写高差：目标更高填正数，更低填负数。地形数据不含桥梁、房顶等附加高度，炮口高度按所选武器计算。弹道剖面也以炮位地面为零点。\n\n" +
                 "4. 左上角选择工事或载具、具体武器及弹药。程序使用各自初速、重力和仰角限制，按武器显示密位、度数或度分。方位 0° 为北、90° 为东；NATO 密位采用 6400/圈。飞行时间为理论估算。\n\n" +
                 "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
@@ -1006,8 +1004,8 @@ namespace SquadTools
           <TextBlock Text='地图' FontSize='11' Foreground='#96A5B6' Margin='0,10,0,8'/><ComboBox x:Name='MapSelector'/>
           <Grid Margin='0,7,0,0'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions><TextBlock x:Name='ServerMapNote' Foreground='#91A6BE' FontSize='10' VerticalAlignment='Center' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, RelativeSource={RelativeSource Self}}'/><Button x:Name='StopServerFollow' Grid.Column='1' Content='停止跟随' Background='Transparent' Visibility='Collapsed' Padding='7,3'/></Grid>
           <Grid Margin='0,18,0,0'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='12'/><ColumnDefinition/></Grid.ColumnDefinitions>
-            <StackPanel><TextBlock Text='炮位' Foreground='#ADCDF9' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='WeaponGrid' Text='D05-5-5' ToolTip='在地图双击右键，或输入网格坐标。'/></StackPanel>
-            <StackPanel Grid.Column='2'><TextBlock Text='目标' Foreground='#E4B6A4' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='TargetGrid' Text='F06-5-5' ToolTip='在地图左键点选，或输入网格坐标。'/></StackPanel>
+            <StackPanel><TextBlock Text='炮位' Foreground='#ADCDF9' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='WeaponGrid' Text='D05-5-5' ToolTip='在地图单击右键，或输入网格坐标。'/></StackPanel>
+            <StackPanel Grid.Column='2'><TextBlock Text='目标' Foreground='#E4B6A4' FontSize='12' Margin='0,0,0,8'/><TextBox x:Name='TargetGrid' Text='F06-5-5' ToolTip='在地图双击左键，或输入网格坐标；按住目标点可拖动位置。'/></StackPanel>
           </Grid>
           <Grid x:Name='HeightInputs' Visibility='Collapsed'><TextBox x:Name='WeaponHeight' Text='0'/><TextBox x:Name='TargetHeight' Text='0'/></Grid>
           <StackPanel x:Name='ManualHeightInputs' Visibility='Collapsed' Margin='0,16,0,0'><TextBlock Text='地面高差 · m' FontSize='11' Foreground='#96A5B6' Margin='0,0,0,8'/><TextBox x:Name='ManualDifference' Text='0' ToolTip='目标地面相对炮位地面的高差。目标更高填正数，更低填负数；等高填 0。' AutomationProperties.Name='手动地面高差，米'/></StackPanel>
@@ -1032,17 +1030,17 @@ namespace SquadTools
     </Border>
     <Border x:Name='MapCard' Grid.Column='2' Background='#101B24' BorderBrush='#2A3441' BorderThickness='1' CornerRadius='13'>
       <Grid><Grid.RowDefinitions><RowDefinition Height='52'/><RowDefinition Height='*'/><RowDefinition Height='48'/></Grid.RowDefinitions>
-        <DockPanel Margin='16,0' LastChildFill='False'><StackPanel DockPanel.Dock='Left' Orientation='Horizontal' VerticalAlignment='Center'><StackPanel Width='166' Margin='0,0,12,0'><TextBlock x:Name='MapName' Text='离线坐标网格' FontSize='13' FontWeight='Medium' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, ElementName=MapInfo}'/><TextBlock x:Name='MapInfo' Visibility='Collapsed'/></StackPanel><RadioButton x:Name='PlaceTarget' Content='目标' IsChecked='True' GroupName='Mode'/><RadioButton x:Name='PlaceMortar' Content='炮位' GroupName='Mode'/></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ZoomOut' Content='−' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ZoomIn' Content='+' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ResetView' Content='全图' Padding='10,4'/></StackPanel></DockPanel>
+        <DockPanel Margin='16,0' LastChildFill='False'><StackPanel DockPanel.Dock='Left' Orientation='Horizontal' VerticalAlignment='Center'><StackPanel Width='166' Margin='0,0,12,0'><TextBlock x:Name='MapName' Text='离线坐标网格' FontSize='13' FontWeight='Medium' TextTrimming='CharacterEllipsis' ToolTip='{Binding Text, ElementName=MapInfo}'/><TextBlock x:Name='MapInfo' Visibility='Collapsed'/></StackPanel></StackPanel><StackPanel DockPanel.Dock='Right' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ZoomOut' Content='−' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ZoomIn' Content='+' Padding='10,4' Margin='0,0,4,0'/><Button x:Name='ResetView' Content='全图' Padding='10,4'/></StackPanel></DockPanel>
         <Border Grid.Row='1' x:Name='MapHost' BorderBrush='#2A3441' BorderThickness='0,1'/>
         <Grid Grid.Row='2' Margin='16,7'><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions>
-          <DockPanel LastChildFill='True' Margin='0,0,10,0'><StackPanel x:Name='ShootingDisplay' Orientation='Horizontal' DockPanel.Dock='Right' VerticalAlignment='Center'><CheckBox x:Name='SpreadDisplay' Content='散布' IsChecked='True' Foreground='#94C9FF' FontSize='11' Margin='0,0,10,0' VerticalAlignment='Center'/><CheckBox x:Name='DamageDisplay' Content='伤害圈' IsChecked='True' Foreground='#EDC084' FontSize='11' Margin='0,0,9,0' VerticalAlignment='Center'/><Button x:Name='TrajectoryButton' Content='弹道剖面' Background='Transparent' Padding='6,5'/></StackPanel><TextBlock x:Name='MapGestureHint' Text='左键目标 · 右键双击炮位' TextTrimming='CharacterEllipsis' ToolTip='左键目标；右键双击炮位；按住右键或中键拖动；滚轮缩放。' Margin='0,0,8,0' Foreground='#8192A5' FontSize='10' VerticalAlignment='Center'/></DockPanel>
+          <DockPanel LastChildFill='True' Margin='0,0,10,0'><StackPanel x:Name='ShootingDisplay' Orientation='Horizontal' DockPanel.Dock='Right' VerticalAlignment='Center'><CheckBox x:Name='SpreadDisplay' Content='散布' IsChecked='True' Foreground='#94C9FF' FontSize='11' Margin='0,0,10,0' VerticalAlignment='Center'/><CheckBox x:Name='DamageDisplay' Content='伤害圈' IsChecked='True' Foreground='#EDC084' FontSize='11' Margin='0,0,9,0' VerticalAlignment='Center'/><Button x:Name='TrajectoryButton' Content='弹道剖面' Background='Transparent' Padding='6,5'/></StackPanel><TextBlock x:Name='MapGestureHint' Text='左键拖图 · 双击目标 · 右键炮位' TextTrimming='CharacterEllipsis' ToolTip='按住左键或中键拖动地图；左键双击设置目标；右键单击设置炮位；鼠标移到目标点上显示手形，按住左键拖动目标；滚轮缩放。' Margin='0,0,8,0' Foreground='#8192A5' FontSize='10' VerticalAlignment='Center'/></DockPanel>
           <StackPanel Grid.Column='1' Orientation='Horizontal' VerticalAlignment='Center'><Button x:Name='ClearMap' Content='空白地图' Background='Transparent' Padding='9,5' Margin='0,0,4,0'/><Button x:Name='ImportMap' Content='导入地图' Padding='10,5'/></StackPanel>
         </Grid>
       </Grid>
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-   <TextBlock Grid.Row='3' Text='Squad Tools · 0.8.1 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
+   <TextBlock Grid.Row='3' Text='Squad Tools · 0.8.2 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 
