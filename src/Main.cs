@@ -35,6 +35,7 @@ namespace SquadTools
         private CheckBox spreadDisplay, damageDisplay;
         private Button trajectoryButton;
         private TrajectoryWindow trajectoryWindow;
+        private readonly CrosshairFeature crosshairFeature;
         private bool restoredRaasAuto = true;
         private WeaponDefinition selectedWeapon = WeaponCatalog.Default;
         private ShellDefinition selectedShell = WeaponCatalog.Default.Shells[0];
@@ -94,6 +95,8 @@ namespace SquadTools
             mapInfo = (TextBlock)root.FindName("MapInfo"); terrainNote = (TextBlock)root.FindName("TerrainNote");
             manualDifference = (TextBox)root.FindName("ManualDifference");
             InitializeAppearance(root);
+            crosshairFeature = new CrosshairFeature(this, testMode);
+            ((Button)root.FindName("CrosshairButton")).Click += delegate { crosshairFeature.ShowSettings(); };
             mapSelector = (ComboBox)root.FindName("MapSelector");
             weaponCategory = (ComboBox)root.FindName("WeaponCategory"); weaponSelector = (ComboBox)root.FindName("WeaponSelector"); shellSelector = (ComboBox)root.FindName("ShellSelector");
             weaponInfo = (TextBlock)root.FindName("WeaponInfo"); serverMapNote = (TextBlock)root.FindName("ServerMapNote"); stopServerFollow = (Button)root.FindName("StopServerFollow");
@@ -727,6 +730,7 @@ namespace SquadTools
                     }
                     bool savedAuto; XmlNode autoNode=document.SelectSingleNode("/settings/raasAutoComplete");
                     if(autoNode!=null && bool.TryParse(autoNode.InnerText,out savedAuto)) restoredRaasAuto=savedAuto;
+                    crosshairFeature.Load(document.SelectSingleNode("/settings/crosshair"));
                     preciseWeapon = ReadPrecisePoint(document, "weapon", weaponGrid.Text);
                     preciseTarget = ReadPrecisePoint(document, "target", targetGrid.Text);
                 }
@@ -755,6 +759,7 @@ namespace SquadTools
                     writer.WriteElementString("windowOpacity", windowOpacity.ToString("R", CultureInfo.InvariantCulture));
                     writer.WriteElementString("lightTheme", (themeToggle.IsChecked == true).ToString());
                     writer.WriteElementString("alwaysOnTop", Topmost.ToString());
+                    crosshairFeature.Write(writer);
                     WritePrecisePoint(writer, "weapon", preciseWeapon);
                     WritePrecisePoint(writer, "target", preciseTarget);
                     writer.WriteEndElement();
@@ -795,6 +800,7 @@ namespace SquadTools
                 "4. 左上角选择工事或载具、具体武器及弹药。程序使用各自初速、重力和仰角限制，按武器显示密位、度数或度分。方位 0° 为北、90° 为东；NATO 密位采用 6400/圈。飞行时间为理论估算。\n\n" +
                 "5. 自定义图片须裁齐地图边缘，导入时在弹窗中填写真实边长；内置地图无需设置。范围圈仅代表平地理论最大射程。\n\n" +
                 "6. 右上角依次是透明度、置顶、浅色 / 深色主题、帮助。点击透明度图标可展开滑动条，拖动时实时预览；不透明度最低为 30%。透明度、置顶与主题会保存，重启后恢复。\n\n" +
+                "7. 顶部“辅助准星”可在所选屏幕正中心显示准星，支持十字、圆点、圆环及颜色、大小、线宽、不透明度。Ctrl + Alt + F8 随时开关，最小化工具后保持显示，关闭工具后一起退出。请使用窗口化或无边框全屏模式。\n\n" +
                 "贝拉亚为暂退役的旧版地图，仅提供底图和手动高差。本版不判断地形遮挡，不含 OCR 或游戏读取，命中精度尚未经游戏实测。\n\n" +
                 "服务器列表：点选仅查看详情。点击“启用地图跟随”后仍停留在列表，手动进入射击计算或 RAAS 猜点才同步，并每 60 秒跟随换图。非 RAAS 或未收录图层时，猜点保留手动地图和确认链。可在列表或射击页停止跟随。上报人数、EOS 登记与可见成员口径不同；持续差异提示不等于已证实阴兵。\n\n" +
                 "RAAS 猜点：顶部选择该页，指定地图、具体 RAAS 图层和己方基地。按住左键拖动地图，左键双击基地或候选旗点进行确认，也可在左侧列表选择后确认。基地显示对应国旗或阵营代号；跟随时用服务器当前阵营，手动模式用图层默认阵营，缺失则显示未知。支持上一步与重置，数据内置且可离线计算。概率为路线模型估计，游戏更新后可能需要更新数据。\n\n" +
@@ -982,7 +988,7 @@ namespace SquadTools
   </Grid.Resources>
   <Grid.RowDefinitions><RowDefinition Height='50'/><RowDefinition Height='54'/><RowDefinition Height='*'/><RowDefinition Height='26'/></Grid.RowDefinitions>
   <DockPanel LastChildFill='False'>
-    <StackPanel DockPanel.Dock='Left' Orientation='Horizontal'><TextBlock Text='SQUAD TOOLS' FontWeight='SemiBold' FontSize='15' Margin='0,9,24,0'/><Border Background='#1B2531' CornerRadius='11' Padding='3' VerticalAlignment='Top'><StackPanel Orientation='Horizontal'><Button x:Name='MortarTab' Content='射击计算' Background='#304A64' Padding='16,7'/><Button x:Name='RaasTab' Content='RAAS 猜点' Background='Transparent' Padding='16,7'/><Button x:Name='ServerTab' Content='服务器' Background='Transparent' Padding='16,7'/></StackPanel></Border></StackPanel>
+    <StackPanel DockPanel.Dock='Left' Orientation='Horizontal'><TextBlock Text='SQUAD TOOLS' FontWeight='SemiBold' FontSize='15' Margin='0,9,24,0'/><Border Background='#1B2531' CornerRadius='11' Padding='3' VerticalAlignment='Top'><StackPanel Orientation='Horizontal'><Button x:Name='MortarTab' Content='射击计算' Background='#304A64' Padding='16,7'/><Button x:Name='RaasTab' Content='RAAS 猜点' Background='Transparent' Padding='16,7'/><Button x:Name='ServerTab' Content='服务器' Background='Transparent' Padding='16,7'/></StackPanel></Border><Button x:Name='CrosshairButton' Background='Transparent' Margin='10,3,0,3' Padding='12,7' ToolTip='辅助准星设置 · Ctrl + Alt + F8 开关'><StackPanel Orientation='Horizontal'><Path Width='16' Height='16' Stretch='Uniform' Data='M 10,3 A 7,7 0 1 1 10,17 A 7,7 0 1 1 10,3 M 10,0 L 10,6 M 10,14 L 10,20 M 0,10 L 6,10 M 14,10 L 20,10' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}' StrokeThickness='1.5'/><TextBlock Text='辅助准星' Margin='7,0,0,0'/></StackPanel></Button></StackPanel>
     <StackPanel x:Name='HeaderActions' DockPanel.Dock='Right' Orientation='Horizontal'>
       <ToggleButton x:Name='OpacityToggle' Style='{StaticResource HeaderToggle}' ToolTip='窗口透明度' AutomationProperties.Name='窗口透明度'>
         <Grid Width='20' Height='20'><Rectangle Width='12' Height='12' HorizontalAlignment='Left' VerticalAlignment='Top' RadiusX='2' RadiusY='2' Fill='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' Opacity='0.35'/><Rectangle Width='13' Height='13' HorizontalAlignment='Right' VerticalAlignment='Bottom' RadiusX='2' RadiusY='2' Stroke='{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}' StrokeThickness='1.6'/></Grid>
@@ -1053,7 +1059,7 @@ namespace SquadTools
     </Border>
   </Grid>
   <Border x:Name='ServerHost' Grid.Row='1' Grid.RowSpan='2' Visibility='Collapsed'/>
-   <TextBlock Grid.Row='3' Text='Squad Tools · 0.8.4 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
+   <TextBlock Grid.Row='3' Text='Squad Tools · 0.8.5 预览版' Foreground='#65758A' FontSize='10' VerticalAlignment='Bottom'/>
 </Grid>";
     }
 
